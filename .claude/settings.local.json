@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir \"C:\\Users\\wanch\\ClaudeProjects\\haruka-webgl\")",
+      "Bash(ls:*)",
+      "Bash(tree:*)"
+    ],
+    "deny": []
+  }
+}

@@ -1,35 +1,113 @@
 // DOM要素の取得
 const progressBar = document.getElementById('progress-bar');
 
+// 設定値
+const STORAGE_KEY = 'haruka-webgl-position';
+const INTERSECTION_THRESHOLD = 0.3; // パネルの30%が見えたときに表示開始
+
 /**
  * スクロール進捗を計算して進捗バーの幅を更新する関数
  * スクロール位置に応じて0%から100%の値を計算し、進捗バーに反映
  */
 function updateProgressBar() {
-    // 現在のスクロール位置を取得
     const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
-    
-    // ページの総高さからビューポート高さを引いて、スクロール可能な距離を計算
     const documentHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
-    
-    // スクロール進捗を0-100%の範囲で計算
     const scrollProgress = documentHeight > 0 ? (scrollTop / documentHeight) * 100 : 0;
-    
-    // 進捗バーの幅を更新（最小0%、最大100%に制限）
     progressBar.style.width = Math.min(Math.max(scrollProgress, 0), 100) + '%';
 }
 
 /**
- * スムーススクロール機能を提供する関数
- * 指定された要素まで滑らかにスクロール
+ * 保存された読書位置をlocalStorageから復元する関数
+ * 安全性のため、要素が存在しない場合は何もしない
  */
-function smoothScrollTo(element) {
-    if (element) {
-        element.scrollIntoView({
-            behavior: 'smooth',
-            block: 'start'
-        });
+function restoreReadingPosition() {
+    try {
+        const savedPosition = localStorage.getItem(STORAGE_KEY);
+        if (!savedPosition) {
+            console.log('保存された読書位置はありません');
+            return;
+        }
+
+        const targetElement = document.getElementById(savedPosition);
+        if (!targetElement) {
+            console.log(`保存された位置 ${savedPosition} が見つかりません`);
+            return;
+        }
+
+        // 少し遅延を入れて、ページレンダリング完了後にスクロール
+        setTimeout(() => {
+            targetElement.scrollIntoView({
+                behavior: 'smooth',
+                block: 'start'
+            });
+            console.log(`保存された位置 ${savedPosition} に復元しました`);
+        }, 100);
+    } catch (error) {
+        console.error('読書位置の復元中にエラーが発生しました:', error);
     }
+}
+
+/**
+ * 読書位置をlocalStorageに保存する関数
+ * 最後に可視化されたパネルのIDを保存
+ */
+function saveReadingPosition(panelId) {
+    try {
+        localStorage.setItem(STORAGE_KEY, panelId);
+        console.log(`読書位置を保存しました: ${panelId}`);
+    } catch (error) {
+        console.error('読書位置の保存中にエラーが発生しました:', error);
+    }
+}
+
+/**
+ * IntersectionObserverのコールバック関数
+ * パネルが画面に表示されたときの処理を担当
+ * - フェードイン効果の適用
+ * - 読書位置の自動保存
+ */
+function handleIntersection(entries, observer) {
+    entries.forEach(entry => {
+        const panel = entry.target;
+        
+        if (entry.isIntersecting) {
+            // フェードイン効果を適用
+            panel.classList.add('is-visible');
+            
+            // 読書位置を保存（パネルIDを取得）
+            const panelId = panel.id;
+            if (panelId) {
+                saveReadingPosition(panelId);
+            }
+            
+            console.log(`パネル ${panelId} が表示されました`);
+        }
+    });
+}
+
+/**
+ * IntersectionObserverを初期化する関数
+ * パネルの可視性を監視し、適切なコールバックを設定
+ */
+function initializeIntersectionObserver() {
+    // IntersectionObserver のオプション設定
+    const options = {
+        root: null, // ビューポートを基準にする
+        rootMargin: '0px',
+        threshold: INTERSECTION_THRESHOLD
+    };
+
+    // Observerを作成
+    const observer = new IntersectionObserver(handleIntersection, options);
+    
+    // 全てのパネルを監視対象に追加
+    const panels = document.querySelectorAll('.panel');
+    panels.forEach(panel => {
+        observer.observe(panel);
+    });
+    
+    console.log(`${panels.length}個のパネルの監視を開始しました`);
+    return observer;
 }
 
 /**
@@ -53,29 +131,30 @@ function handleImageError(event) {
 
 /**
  * ページの初期化処理
- * イベントリスナーの設定とDOMの準備
+ * 全ての機能を統合して初期化する関数
  */
 function initializePage() {
-    // スクロールイベントリスナーを追加（パフォーマンス向上のためpassiveオプション使用）
+    // スクロール関連のイベントリスナー設定
     window.addEventListener('scroll', updateProgressBar, { passive: true });
-    
-    // リサイズイベントリスナーを追加（画面サイズ変更時に進捗を再計算）
     window.addEventListener('resize', updateProgressBar, { passive: true });
-    
-    // 初期読み込み時の進捗バー状態を設定
     updateProgressBar();
     
-    // 全ての画像要素にイベントリスナーを追加
+    // 画像読み込み関連のイベントリスナー設定
     const images = document.querySelectorAll('.panel img');
     images.forEach(img => {
         img.addEventListener('load', handleImageLoad);
         img.addEventListener('error', handleImageError);
         
-        // 既に読み込まれている画像があれば処理
         if (img.complete) {
             handleImageLoad({ target: img });
         }
     });
+    
+    // IntersectionObserver初期化
+    initializeIntersectionObserver();
+    
+    // 保存された読書位置を復元
+    restoreReadingPosition();
     
     console.log('ハルカノカナタ Web体験版が初期化されました');
 }

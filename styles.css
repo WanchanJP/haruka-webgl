@@ -58,21 +58,13 @@ body {
 .panels {
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 0;
     margin-bottom: 60px;
 }
 
 .panel {
     background: white;
-    border-radius: 8px;
     overflow: hidden;
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
-}
-
-.panel:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
 }
 
 .panel img {
@@ -111,11 +103,7 @@ body {
     }
     
     .panels {
-        gap: 30px;
-    }
-    
-    .panel {
-        border-radius: 12px;
+        gap: 0;
     }
 }
 
@@ -136,7 +124,7 @@ body {
     }
     
     .panels {
-        gap: 40px;
+        gap: 0;
         margin-bottom: 80px;
     }
 }

@@ -46,21 +46,109 @@ section {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
+/* Status Section */
+.status-section {
+  text-align: center;
+}
+
+.status-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 0.5rem 1.5rem;
+  border-radius: 20px;
+  color: white;
+  font-weight: 600;
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  transition: all 0.3s ease;
+}
+
+.error-message {
+  padding: 1rem;
+  background: #ffebee;
+  border: 1px solid #ef5350;
+  border-radius: 4px;
+  color: #c62828;
+  font-size: 0.875rem;
+  max-width: 600px;
+  word-break: break-word;
+}
+
 /* Unity Section */
 .unity-section {
   text-align: center;
 }
 
-.unity-placeholder {
-  min-height: 400px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+.unity-container {
+  min-height: 200px;
+  background: #1a1a1a;
   border-radius: 4px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  padding: 2rem;
+}
+
+.unity-canvas {
+  max-width: 100%;
+  height: auto;
+  border: 2px solid #333;
+  border-radius: 4px;
+  background: #000;
+}
+
+.unity-hint {
   color: white;
-  font-size: 1.125rem;
-  font-weight: 500;
+  font-size: 0.875rem;
+  margin-top: 1rem;
+  opacity: 0.9;
+}
+
+/* Control Section */
+.control-section {
+  text-align: center;
+}
+
+.capture-button {
+  padding: 0.75rem 2rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: white;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
+.capture-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.capture-button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.capture-button:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.control-hint {
+  margin-top: 0.75rem;
+  font-size: 0.875rem;
+  color: #666;
 }
 
 /* Canvas Section */
@@ -77,6 +165,12 @@ section {
   image-rendering: pixelated;
 }
 
+.canvas-hint {
+  margin-top: 0.75rem;
+  font-size: 0.875rem;
+  color: #666;
+}
+
 /* レスポンシブ対応 */
 @media (max-width: 768px) {
   .container {
@@ -91,7 +185,13 @@ section {
     padding: 1rem;
   }
 
-  .unity-placeholder {
-    min-height: 300px;
+  .unity-container {
+    min-height: 150px;
+    padding: 1.5rem;
+  }
+
+  .capture-button {
+    padding: 0.625rem 1.5rem;
+    font-size: 0.875rem;
   }
 }

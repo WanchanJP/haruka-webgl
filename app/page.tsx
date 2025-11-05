@@ -1,14 +1,134 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { loadUnity, sendMessageToUnity } from "@/lib/unity";
+
+type UnityStatus = "idle" | "loading" | "ready" | "error";
+
 export default function Home() {
+  const [status, setStatus] = useState<UnityStatus>("idle");
+  const [errorMessage, setErrorMessage] = useState<string>("");
+
+  // Unity初期化
+  useEffect(() => {
+    const initUnity = async () => {
+      setStatus("loading");
+      setErrorMessage("");
+
+      try {
+        console.log("Starting Unity initialization from page.tsx...");
+
+        // タイムアウト設定（60秒）
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => {
+            reject(
+              new Error(
+                "Unity initialization timed out after 60 seconds. Check browser console for details."
+              )
+            );
+          }, 60000);
+        });
+
+        // Unity初期化とタイムアウトを競合させる
+        await Promise.race([loadUnity(), timeoutPromise]);
+
+        console.log("Unity initialization completed successfully");
+        setStatus("ready");
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Unknown error occurred";
+        console.error("Unity initialization failed:", error);
+        setErrorMessage(message);
+        setStatus("error");
+      }
+    };
+
+    initUnity();
+  }, []);
+
+  // Captureボタンハンドラ
+  const handleCapture = () => {
+    if (status !== "ready") {
+      console.warn("Unity is not ready yet");
+      return;
+    }
+
+    // Unity側のBridge.CaptureAndSendを呼び出す
+    sendMessageToUnity("Bridge", "CaptureAndSend");
+  };
+
+  // ステータス表示用のラベルと色
+  const getStatusDisplay = () => {
+    switch (status) {
+      case "idle":
+        return { label: "待機中", color: "#666" };
+      case "loading":
+        return { label: "Unity読み込み中...", color: "#2196F3" };
+      case "ready":
+        return { label: "準備完了", color: "#4CAF50" };
+      case "error":
+        return { label: "エラー", color: "#F44336" };
+    }
+  };
+
+  const statusDisplay = getStatusDisplay();
+
   return (
     <main className="container">
       <h1>Haruka WebGL</h1>
 
-      {/* Unity埋め込み予定のプレースホルダ */}
+      {/* ステータス表示 */}
+      <section className="status-section">
+        <div className="status-indicator">
+          <span
+            className="status-badge"
+            style={{ backgroundColor: statusDisplay.color }}
+          >
+            {statusDisplay.label}
+          </span>
+          {errorMessage && (
+            <div className="error-message">
+              <strong>エラー詳細:</strong> {errorMessage}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Unity埋め込みエリア */}
       <section className="unity-section">
         <h2>Unity Content</h2>
-        <div id="unity-root" className="unity-placeholder">
-          Unity content will be loaded here
+        <div id="unity-root" className="unity-container">
+          {/* Unity実キャンバス */}
+          <canvas
+            id="unity-canvas"
+            className="unity-canvas"
+            style={{
+              width: "640px",
+              height: "480px",
+              display: "block",
+            }}
+          />
+          <p className="unity-hint">
+            Unity WebGLがバックグラウンドで実行中です
+          </p>
         </div>
+      </section>
+
+      {/* 操作パネル */}
+      <section className="control-section">
+        <h2>操作</h2>
+        <button
+          className="capture-button"
+          onClick={handleCapture}
+          disabled={status !== "ready"}
+        >
+          📸 Capture
+        </button>
+        <p className="control-hint">
+          {status === "ready"
+            ? "Unity からスクリーンショットをキャプチャします"
+            : "Unity の準備完了をお待ちください"}
+        </p>
       </section>
 
       {/* Canvas Previewセクション */}
@@ -22,7 +142,8 @@ export default function Home() {
         >
           Canvas not supported
         </canvas>
+        <p className="canvas-hint">受信データがここに描画されます</p>
       </section>
     </main>
-  )
+  );
 }

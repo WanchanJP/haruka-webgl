@@ -46,6 +46,63 @@ export default function Home() {
     initUnity();
   }, []);
 
+  // Unity → JavaScript 画像受信ハンドラを登録
+  useEffect(() => {
+    console.log("[Bridge] Registering image receive handler...");
+
+    window.onUnityImageReceived = (
+      data: Uint8Array,
+      width: number,
+      height: number
+    ) => {
+      console.log(
+        `[Bridge] Received image data: ${data.length} bytes (${width}x${height})`
+      );
+
+      const canvas = document.getElementById(
+        "rt-canv-0"
+      ) as HTMLCanvasElement | null;
+      if (!canvas) {
+        console.warn("[Bridge] Canvas #rt-canv-0 not found");
+        return;
+      }
+
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        console.warn("[Bridge] 2D context not available");
+        return;
+      }
+
+      try {
+        // Uint8Array → Uint8ClampedArray → ImageData
+        const imageData = new ImageData(
+          new Uint8ClampedArray(data),
+          width,
+          height
+        );
+
+        // Canvas に描画（通常描画）
+        ctx.putImageData(imageData, 0, 0);
+
+        // 上下反転が必要な場合は以下をコメント解除
+        // ctx.save();
+        // ctx.translate(0, canvas.height);
+        // ctx.scale(1, -1);
+        // ctx.putImageData(imageData, 0, 0);
+        // ctx.restore();
+
+        console.log("[Bridge] ✅ Image rendered successfully");
+      } catch (error) {
+        console.error("[Bridge] Failed to render image:", error);
+      }
+    };
+
+    return () => {
+      console.log("[Bridge] Unregistering image receive handler");
+      delete window.onUnityImageReceived;
+    };
+  }, []);
+
   // Captureボタンハンドラ
   const handleCapture = () => {
     if (status !== "ready") {

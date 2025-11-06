@@ -119,25 +119,38 @@ export async function loadUnity(
  * Unity側にメッセージを送信
  * @param gameObjectName - Unity側のGameObject名
  * @param methodName - Unity側のメソッド名
- * @param value - 送信する値（オプション）
+ * @param param - 送信するパラメータ（オプション）
+ * @throws {Error} Unity instanceが未初期化の場合
  */
 export function sendMessageToUnity(
   gameObjectName: string,
   methodName: string,
-  value?: string | number
+  param?: string | number
 ): void {
-  if (!window.unityInstance) {
-    console.warn("Unity instance is not ready yet");
+  const instance = window.unityInstance;
+
+  if (!instance) {
+    console.warn(
+      `[Unity] Cannot send message: Unity instance is not ready yet. (${gameObjectName}.${methodName})`
+    );
     return;
   }
 
   try {
-    window.unityInstance.SendMessage(gameObjectName, methodName, value);
-    console.log(
-      `Sent message to Unity: ${gameObjectName}.${methodName}`,
-      value
-    );
+    if (param === undefined) {
+      instance.SendMessage(gameObjectName, methodName);
+      console.log(`[Unity] Sent: ${gameObjectName}.${methodName}()`);
+    } else {
+      instance.SendMessage(gameObjectName, methodName, param);
+      console.log(
+        `[Unity] Sent: ${gameObjectName}.${methodName}(${param})`
+      );
+    }
   } catch (error) {
-    console.error("Failed to send message to Unity:", error);
+    console.error(
+      `[Unity] Failed to send message to ${gameObjectName}.${methodName}:`,
+      error
+    );
+    throw error;
   }
 }

@@ -27,6 +27,13 @@ declare global {
       canvas: HTMLCanvasElement,
       config: UnityConfig
     ) => Promise<any>;
+    unityInstance?: any;
+    onUnityImageReceived?: (
+      b64: string,
+      w: number,
+      h: number,
+      index?: number
+    ) => void;
   }
 }
 
@@ -153,4 +160,65 @@ export function sendMessageToUnity(
     );
     throw error;
   }
+}
+
+// ========================================
+// Canvas描画関数
+// ========================================
+
+/**
+ * Base64 PNG画像をCanvasに描画（高DPI対応）
+ * @param b64 - Base64エンコードされた画像データ（data:image/png;base64, プレフィックスなし）
+ * @param w - CSS幅（ピクセル）
+ * @param h - CSS高さ（ピクセル）
+ * @param index - Canvas番号（デフォルト: 0 → #rt-canv-0）
+ */
+export function drawBase64ToCanvas(
+  b64: string,
+  w: number,
+  h: number,
+  index = 0
+): void {
+  const cvs = document.getElementById(
+    `rt-canv-${index}`
+  ) as HTMLCanvasElement | null;
+  if (!cvs) {
+    console.warn(`[drawBase64ToCanvas] canvas #rt-canv-${index} not found`);
+    return;
+  }
+
+  // 高DPI対応：実画素を確保
+  const dpr = window.devicePixelRatio || 1;
+  cvs.width = Math.max(1, Math.floor(w * dpr));
+  cvs.height = Math.max(1, Math.floor(h * dpr));
+  cvs.style.width = `${w}px`;
+  cvs.style.height = `${h}px`;
+
+  const ctx = cvs.getContext("2d");
+  if (!ctx) {
+    console.error("[drawBase64ToCanvas] 2D context not available");
+    return;
+  }
+
+  const img = new Image();
+  img.onload = () => {
+    ctx.clearRect(0, 0, cvs.width, cvs.height);
+    ctx.drawImage(img, 0, 0, cvs.width, cvs.height);
+    console.log(`[drawBase64ToCanvas] ✅ Image rendered to #rt-canv-${index}`);
+  };
+  img.onerror = (e) => {
+    console.error("[drawBase64ToCanvas] image load error", e);
+  };
+  img.src = `data:image/png;base64,${b64}`;
+}
+
+// ========================================
+// グローバル受け口の登録（ブラウザ環境のみ）
+// ========================================
+
+if (typeof window !== "undefined") {
+  window.onUnityImageReceived = (b64: string, w: number, h: number, index = 0) => {
+    console.log(`[onUnityImageReceived] Received: ${b64.length} chars, ${w}x${h}, index=${index}`);
+    drawBase64ToCanvas(b64, w, h, index);
+  };
 }

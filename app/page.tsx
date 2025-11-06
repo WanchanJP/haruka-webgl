@@ -1,9 +1,30 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { loadUnity, sendMessageToUnity } from "@/lib/unity";
+import { useCallback, useEffect, useState } from "react";
+import { loadUnity, sendMessageToUnity, drawBase64ToCanvas } from "@/lib/unity";
 
 type UnityStatus = "idle" | "loading" | "ready" | "error";
+
+/**
+ * テスト用のチェッカーボード画像を生成（Unityなしで動作確認用）
+ * @param size - 画像サイズ（正方形）
+ * @returns Base64エンコードされたPNG画像データ（プレフィックスなし）
+ */
+function generateTestImageBase64(size = 256): string {
+  const c = document.createElement("canvas");
+  c.width = c.height = size;
+  const g = c.getContext("2d")!;
+  const tile = size / 8;
+  for (let y = 0; y < 8; y++) {
+    for (let x = 0; x < 8; x++) {
+      g.fillStyle = (x + y) % 2 === 0 ? "#ddd" : "#555";
+      g.fillRect(x * tile, y * tile, tile, tile);
+    }
+  }
+  g.fillStyle = "#e91e63";
+  g.fillRect(size * 0.35, size * 0.35, size * 0.3, size * 0.3);
+  return c.toDataURL("image/png").split(",")[1]; // base64部分のみ
+}
 
 export default function Home() {
   const [status, setStatus] = useState<UnityStatus>("idle");
@@ -46,65 +67,8 @@ export default function Home() {
     initUnity();
   }, []);
 
-  // Unity → JavaScript 画像受信ハンドラを登録
-  useEffect(() => {
-    console.log("[Bridge] Registering image receive handler...");
-
-    window.onUnityImageReceived = (
-      data: Uint8Array,
-      width: number,
-      height: number
-    ) => {
-      console.log(
-        `[Bridge] Received image data: ${data.length} bytes (${width}x${height})`
-      );
-
-      const canvas = document.getElementById(
-        "rt-canv-0"
-      ) as HTMLCanvasElement | null;
-      if (!canvas) {
-        console.warn("[Bridge] Canvas #rt-canv-0 not found");
-        return;
-      }
-
-      const ctx = canvas.getContext("2d");
-      if (!ctx) {
-        console.warn("[Bridge] 2D context not available");
-        return;
-      }
-
-      try {
-        // Uint8Array → Uint8ClampedArray → ImageData
-        const imageData = new ImageData(
-          new Uint8ClampedArray(data),
-          width,
-          height
-        );
-
-        // Canvas に描画（通常描画）
-        ctx.putImageData(imageData, 0, 0);
-
-        // 上下反転が必要な場合は以下をコメント解除
-        // ctx.save();
-        // ctx.translate(0, canvas.height);
-        // ctx.scale(1, -1);
-        // ctx.putImageData(imageData, 0, 0);
-        // ctx.restore();
-
-        console.log("[Bridge] ✅ Image rendered successfully");
-      } catch (error) {
-        console.error("[Bridge] Failed to render image:", error);
-      }
-    };
-
-    return () => {
-      console.log("[Bridge] Unregistering image receive handler");
-      delete window.onUnityImageReceived;
-    };
-  }, []);
-
-  // Captureボタンハンドラ
-  const handleCapture = () => {
+  // Captureボタンハンドラ（Unity → JavaScript）
+  const handleCapture = useCallback(() => {
     if (status !== "ready") {
       console.warn("Unity is not ready yet");
       return;
@@ -112,7 +76,18 @@ export default function Home() {
 
     // Unity側のBridge.CaptureAndSendを呼び出す
     sendMessageToUnity("Bridge", "CaptureAndSend");
-  };
+  }, [status]);
+
+  // テスト描画ハンドラ（Unityなし）
+  const handleTestDraw = useCallback(() => {
+    const b64 = generateTestImageBase64(256);
+    // window.onUnityImageReceived が登録されていればそれを使用、なければ直接描画
+    if (window.onUnityImageReceived) {
+      window.onUnityImageReceived(b64, 256, 256, 0);
+    } else {
+      drawBase64ToCanvas(b64, 256, 256, 0);
+    }
+  }, []);
 
   // ステータス表示用のラベルと色
   const getStatusDisplay = () => {
@@ -171,35 +146,50 @@ export default function Home() {
         </div>
       </section>
 
-      {/* 操作パネル */}
-      <section className="control-section">
-        <h2>操作</h2>
-        <button
-          className="capture-button"
-          onClick={handleCapture}
-          disabled={status !== "ready"}
-        >
-          📸 Capture
-        </button>
-        <p className="control-hint">
-          {status === "ready"
-            ? "Unity からスクリーンショットをキャプチャします"
-            : "Unity の準備完了をお待ちください"}
-        </p>
-      </section>
-
-      {/* Canvas Previewセクション */}
+      {/* Canvas Previewセクション（受け取り用） */}
       <section className="canvas-section">
         <h2>Canvas Preview</h2>
+        <div style={{ fontSize: "0.875rem", opacity: 0.7, marginBottom: "0.5rem" }}>
+          Receiver: #rt-canv-0
+        </div>
         <canvas
           id="rt-canv-0"
-          width="256"
-          height="256"
           className="preview-canvas"
+          style={{
+            width: "256px",
+            height: "256px",
+          }}
         >
           Canvas not supported
         </canvas>
         <p className="canvas-hint">受信データがここに描画されます</p>
+      </section>
+
+      {/* 操作パネル */}
+      <section className="control-section">
+        <h2>操作</h2>
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+          <button
+            className="capture-button"
+            onClick={handleCapture}
+            disabled={status !== "ready"}
+            title="Unity から画像をキャプチャ（Unity起動済みが必要）"
+          >
+            📸 Capture
+          </button>
+          <button
+            className="test-button"
+            onClick={handleTestDraw}
+            title="UnityなしでCanvas描画をテスト"
+          >
+            🧪 Canvasテスト（Unityなし）
+          </button>
+        </div>
+        <p className="control-hint">
+          {status === "ready"
+            ? "📸: Unity からキャプチャ / 🧪: Unityなしテスト"
+            : "Unity準備中... 🧪ボタンは使用可能です"}
+        </p>
       </section>
     </main>
   );

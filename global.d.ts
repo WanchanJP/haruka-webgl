@@ -43,22 +43,25 @@ declare global {
      * Unity → JavaScript への画像データ受信ハンドラ
      * Unity側の jslib から呼び出される
      *
-     * @param data - RGBA形式の画像データ（Uint8Array）
-     * @param width - 画像の幅（ピクセル）
-     * @param height - 画像の高さ（ピクセル）
+     * @param b64 - Base64エンコードされたPNG画像データ（プレフィックスなし）
+     * @param w - 画像の幅（ピクセル）
+     * @param h - 画像の高さ（ピクセル）
+     * @param index - Canvas番号（デフォルト: 0 → #rt-canv-0）
      *
      * @example
-     * window.onUnityImageReceived = (data, width, height) => {
-     *   const canvas = document.getElementById("rt-canv-0") as HTMLCanvasElement;
+     * window.onUnityImageReceived = (b64, w, h, index = 0) => {
+     *   const canvas = document.getElementById(`rt-canv-${index}`) as HTMLCanvasElement;
      *   const ctx = canvas.getContext("2d");
-     *   const imageData = new ImageData(new Uint8ClampedArray(data), width, height);
-     *   ctx?.putImageData(imageData, 0, 0);
+     *   const img = new Image();
+     *   img.onload = () => ctx.drawImage(img, 0, 0);
+     *   img.src = `data:image/png;base64,${b64}`;
      * };
      */
     onUnityImageReceived?: (
-      data: Uint8Array,
-      width: number,
-      height: number
+      b64: string,
+      w: number,
+      h: number,
+      index?: number
     ) => void;
   }
 }

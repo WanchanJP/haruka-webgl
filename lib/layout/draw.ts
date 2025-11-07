@@ -119,6 +119,14 @@ export function drawPanel(
     }
   }
 
+  // Unity Live キャプチャの描画（unity-live パネル専用）
+  if (panel.id === "unity-live" && options.imageCache) {
+    const liveImg = options.imageCache.get("unity-live-capture");
+    if (liveImg && liveImg.complete) {
+      ctx.drawImage(liveImg, 0, 0, width, height);
+    }
+  }
+
   ctx.restore(); // マスククリップ解除
 
   // デバッグ表示

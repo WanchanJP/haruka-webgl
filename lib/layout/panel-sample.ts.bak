@@ -101,7 +101,7 @@ export const sampleScene: SceneSpec = {
       id: "panel-5",
       transform: {
         x: 160,
-        y: 1650,
+        y: 1210,
         width: 400,
         height: 500,
         zIndex: 1,
@@ -119,7 +119,7 @@ export const sampleScene: SceneSpec = {
       id: "panel-6",
       transform: {
         x: 50,
-        y: 2190,
+        y: 1750,
         width: 280,
         height: 200,
         rotation: -5,
@@ -133,7 +133,7 @@ export const sampleScene: SceneSpec = {
       id: "panel-7",
       transform: {
         x: 400,
-        y: 2240,
+        y: 1800,
         width: 260,
         height: 220,
         rotation: 8,
@@ -153,7 +153,7 @@ export const sampleScene: SceneSpec = {
       id: "panel-8",
       transform: {
         x: 40,
-        y: 2520,
+        y: 2080,
         width: 640,
         height: 300,
         opacity: 0.95,
@@ -173,7 +173,7 @@ export const sampleScene: SceneSpec = {
       id: "panel-9",
       transform: {
         x: 210,
-        y: 2860,
+        y: 2420,
         width: 300,
         height: 450,
         zIndex: 1,
@@ -186,7 +186,7 @@ export const sampleScene: SceneSpec = {
       id: "panel-10",
       transform: {
         x: 60,
-        y: 3360,
+        y: 2920,
         width: 280,
         height: 320,
         rotation: -3,
@@ -206,7 +206,7 @@ export const sampleScene: SceneSpec = {
       id: "panel-11",
       transform: {
         x: 380,
-        y: 3380,
+        y: 2940,
         width: 300,
         height: 280,
         rotation: 5,
@@ -220,7 +220,7 @@ export const sampleScene: SceneSpec = {
       id: "panel-12",
       transform: {
         x: 40,
-        y: 3720,
+        y: 3280,
         width: 640,
         height: 400,
         zIndex: 1,
@@ -239,7 +239,7 @@ export const sampleScene: SceneSpec = {
       id: "panel-13",
       transform: {
         x: 100,
-        y: 4180,
+        y: 3740,
         width: 200,
         height: 180,
         rotation: -8,
@@ -253,7 +253,7 @@ export const sampleScene: SceneSpec = {
       id: "panel-14",
       transform: {
         x: 450,
-        y: 4200,
+        y: 3760,
         width: 220,
         height: 200,
         rotation: 6,
@@ -267,7 +267,7 @@ export const sampleScene: SceneSpec = {
       id: "panel-15",
       transform: {
         x: 110,
-        y: 4440,
+        y: 4000,
         width: 500,
         height: 450,
         zIndex: 1,
@@ -286,7 +286,7 @@ export const sampleScene: SceneSpec = {
       id: "panel-16",
       transform: {
         x: 160,
-        y: 4960,
+        y: 4520,
         width: 400,
         height: 300,
         zIndex: 1,

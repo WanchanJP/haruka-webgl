@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import PanelCanvas from "@/components/PanelCanvas";
 import PanelDebugHUD from "@/components/PanelDebugHUD";
+import HiddenUnityHost from "@/components/HiddenUnityHost";
 import { sampleScene } from "@/lib/layout/panel-sample";
 import type { PanelID, VisibleRange } from "@/lib/layout/panel-types";
 import { getVisibleRangeFromContainer } from "@/lib/layout/visibility";
@@ -80,6 +81,9 @@ export default function Home() {
 
   return (
     <>
+      {/* Hidden Unity Host */}
+      <HiddenUnityHost />
+
       {/* Header with link to debug page */}
       <header
         style={{

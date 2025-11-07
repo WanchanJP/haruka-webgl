@@ -13,6 +13,8 @@ import {
   getVisiblePanels,
 } from "@/lib/layout/visibility";
 import { calculateSceneHeight } from "@/lib/layout/panel-sample";
+import { captureManager } from "@/lib/capture/capture-manager";
+import { installUnityReceiverBridge } from "@/lib/capture/install-receiver";
 
 type PanelCanvasProps = {
   scene: SceneSpec;
@@ -43,6 +45,42 @@ export default function PanelCanvas({
     new Set()
   );
   const [needsRedraw, setNeedsRedraw] = useState(true);
+  const latestUnityImageRef = useRef<{
+    b64: string;
+    w: number;
+    h: number;
+  } | null>(null);
+
+  // Unity受信ブリッジのインストールとキャプチャ受信
+  useEffect(() => {
+    installUnityReceiverBridge();
+
+    const unsubscribe = captureManager.onImage((b64, w, h, index) => {
+      console.log(
+        `[PanelCanvas] Received Unity capture: ${b64.length} chars, ${w}x${h}, index=${index}`
+      );
+
+      // 最新画像を保存
+      latestUnityImageRef.current = { b64, w, h };
+
+      // unity-live パネルがあれば画像キャッシュを更新
+      const unityLivePanel = scene.panels.find((p) => p.id === "unity-live");
+      if (unityLivePanel) {
+        const img = new Image();
+        img.onload = () => {
+          setImageCache((prev) => {
+            const next = new Map(prev);
+            next.set("unity-live-capture", img);
+            return next;
+          });
+          setNeedsRedraw(true);
+        };
+        img.src = `data:image/png;base64,${b64}`;
+      }
+    });
+
+    return () => unsubscribe();
+  }, [scene]);
 
   // 画像プリロード
   useEffect(() => {
@@ -93,30 +131,40 @@ export default function PanelCanvas({
 
     const newVisibleIds = new Set(visible.map((p) => p.id));
 
-    // Enter/Leaveイベントの発火
-    newVisibleIds.forEach((id) => {
-      if (!visiblePanelIds.has(id)) {
-        onPanelEnter?.(id);
-      }
+    // Enter/Leaveイベントの発火（前回の状態を参照するためrefを使う）
+    setVisiblePanelIds((prevVisibleIds) => {
+      // 状態更新後にイベントを発火させるため、queueMicrotaskを使用
+      queueMicrotask(() => {
+        newVisibleIds.forEach((id) => {
+          if (!prevVisibleIds.has(id)) {
+            onPanelEnter?.(id);
+          }
+        });
+
+        prevVisibleIds.forEach((id) => {
+          if (!newVisibleIds.has(id)) {
+            onPanelLeave?.(id);
+          }
+        });
+      });
+
+      return newVisibleIds;
     });
 
-    visiblePanelIds.forEach((id) => {
-      if (!newVisibleIds.has(id)) {
-        onPanelLeave?.(id);
-      }
-    });
-
-    setVisiblePanelIds(newVisibleIds);
+    // CaptureManager に可視状態を通知
+    const hasVisiblePanels = newVisibleIds.size > 0;
+    captureManager.setVisibleState(hasVisiblePanels);
 
     if (debug) {
       console.log(
         `[PanelCanvas] Visible range: ${newRange.top.toFixed(0)} - ${newRange.bottom.toFixed(0)}`,
-        `Panels: [${Array.from(newVisibleIds).join(", ")}]`
+        `Panels: [${Array.from(newVisibleIds).join(", ")}]`,
+        `Capture: ${hasVisiblePanels ? "ACTIVE" : "INACTIVE"}`
       );
     }
 
     setNeedsRedraw(true);
-  }, [scene, visiblePanelIds, onPanelEnter, onPanelLeave, debug]);
+  }, [scene, onPanelEnter, onPanelLeave, debug]);
 
   // Canvas初期化とリサイズ
   useEffect(() => {

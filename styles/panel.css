@@ -1,0 +1,57 @@
+/* Panel Layout Styles */
+
+.panel-scroll-container {
+  position: relative;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch; /* iOS smooth scrolling */
+  scroll-behavior: smooth;
+}
+
+.panel-scroll-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.panel-scroll-container::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+.panel-scroll-container::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+
+.panel-scroll-container::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+.panel-canvas {
+  display: block;
+  touch-action: pan-y; /* iOS scroll optimization */
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+}
+
+/* Debug HUD用のスタイル（必要に応じて） */
+.panel-debug-hud {
+  pointer-events: auto;
+}
+
+.panel-debug-hud * {
+  box-sizing: border-box;
+}
+
+/* アクセシビリティ対応 */
+@media (prefers-reduced-motion: reduce) {
+  .panel-scroll-container {
+    scroll-behavior: auto;
+  }
+}
+
+/* モバイル最適化 */
+@media (max-width: 768px) {
+  .panel-scroll-container {
+    height: 100vh;
+    height: 100dvh; /* Dynamic viewport height for mobile browsers */
+  }
+}

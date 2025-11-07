@@ -1,0 +1,6 @@
+<svg width="600" height="800" xmlns="http://www.w3.org/2000/svg">
+  <rect width="600" height="800" fill="#fce4ec"/>
+  <rect x="100" y="100" width="400" height="600" fill="#ec407a" opacity="0.2"/>
+  <text x="300" y="420" font-size="42" font-weight="bold" text-anchor="middle" fill="#c2185b">Panel 3</text>
+  <text x="300" y="470" font-size="20" text-anchor="middle" fill="#880e4f">Vertical Tall</text>
+</svg>

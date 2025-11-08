@@ -37,6 +37,7 @@ export default function PanelCanvas({
   const [imageCache, setImageCache] = useState<Map<string, HTMLImageElement>>(
     new Map()
   );
+  const unityImagesRef = useRef<Map<number, HTMLImageElement>>(new Map());
   const [visibleRange, setVisibleRange] = useState<VisibleRange>({
     top: 0,
     bottom: 0,
@@ -45,11 +46,6 @@ export default function PanelCanvas({
     new Set()
   );
   const [needsRedraw, setNeedsRedraw] = useState(true);
-  const latestUnityImageRef = useRef<{
-    b64: string;
-    w: number;
-    h: number;
-  } | null>(null);
 
   // Unity受信ブリッジのインストールとキャプチャ受信
   useEffect(() => {
@@ -60,33 +56,39 @@ export default function PanelCanvas({
         `[PanelCanvas] Received Unity capture: ${b64.length} chars, ${w}x${h}, index=${index}`
       );
 
-      // 最新画像を保存
-      latestUnityImageRef.current = { b64, w, h };
-
-      // unity-live パネルがあれば画像キャッシュを更新
-      const unityLivePanel = scene.panels.find((p) => p.id === "unity-live");
-      if (unityLivePanel) {
-        const img = new Image();
+      // index ベースで Unity 画像を保存
+      let img = unityImagesRef.current.get(index);
+      if (!img) {
+        img = new Image();
+        unityImagesRef.current.set(index, img);
         img.onload = () => {
-          setImageCache((prev) => {
-            const next = new Map(prev);
-            next.set("unity-live-capture", img);
-            return next;
-          });
           setNeedsRedraw(true);
         };
-        img.src = `data:image/png;base64,${b64}`;
+      } else {
+        // 既存の画像を更新
+        img.onload = () => {
+          setNeedsRedraw(true);
+        };
       }
+      img.src = `data:image/png;base64,${b64}`;
     });
 
     return () => unsubscribe();
-  }, [scene]);
+  }, []);
 
   // 画像プリロード
   useEffect(() => {
-    const imageSrcs = scene.panels
-      .map((p) => p.imageSrc)
-      .filter((src): src is string => !!src);
+    const imageSrcs: string[] = [];
+
+    scene.panels.forEach((p) => {
+      // source.type === "image" を優先
+      if (p.source?.type === "image") {
+        imageSrcs.push(p.source.src);
+      } else if (p.imageSrc) {
+        // 後方互換性: imageSrc が指定されている場合
+        imageSrcs.push(p.imageSrc);
+      }
+    });
 
     if (imageSrcs.length === 0) return;
 
@@ -95,6 +97,11 @@ export default function PanelCanvas({
       setNeedsRedraw(true);
     });
   }, [scene]);
+
+  // Unity画像取得関数
+  const getUnityImage = useCallback((index: number) => {
+    return unityImagesRef.current.get(index);
+  }, []);
 
   // Canvas描画関数
   const drawCanvas = useCallback(() => {
@@ -108,10 +115,11 @@ export default function PanelCanvas({
       debug,
       showMask,
       imageCache,
+      getUnityImage,
     };
 
     drawScene(ctx, scene, options);
-  }, [scene, debug, showMask, imageCache]);
+  }, [scene, debug, showMask, imageCache, getUnityImage]);
 
   // 可視範囲の更新
   const updateVisibleRange = useCallback(() => {

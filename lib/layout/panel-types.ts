@@ -17,12 +17,20 @@ export type PanelTransform = {
   zIndex?: number; // 描画順
 };
 
+/**
+ * パネルの画像ソース定義
+ */
+export type PanelSource =
+  | { type: "none" }
+  | { type: "image"; src: string }
+  | { type: "unity"; index: number };
+
 export type Panel = {
   id: PanelID;
   transform: PanelTransform;
   mask?: PanelMask;
-  // 将来拡張用：画像/動画/Unityキャプチャのプレースホルダ
-  imageSrc?: string; // 任意
+  source?: PanelSource; // 画像ソース（unity/image/none）
+  imageSrc?: string; // @deprecated 後方互換性のため残す。source を優先
   fill?: string; // デバッグ用の塗り色
 };
 

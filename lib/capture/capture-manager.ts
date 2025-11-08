@@ -7,6 +7,8 @@ type CaptureListener = (
   index: number
 ) => void;
 
+type Frame = { b64: string; w: number; h: number };
+
 /**
  * Unity キャプチャの発火・停止・受信を管理
  * 可視パネルが存在する時だけ、指定間隔でキャプチャを実行
@@ -17,6 +19,7 @@ export class CaptureManager {
   private hasVisible = false;
   private listeners = new Set<CaptureListener>();
   private isTabVisible = true;
+  private latestByIndex = new Map<number, Frame>();
 
   constructor(intervalMs = 500) {
     this.intervalMs = intervalMs;
@@ -122,6 +125,9 @@ export class CaptureManager {
    * 受信画像を全リスナーに配信
    */
   emit(b64: string, w: number, h: number, index: number) {
+    // index ごとに最新フレームを保存
+    this.latestByIndex.set(index, { b64, w, h });
+
     console.log(
       `[CaptureManager] Emitting image: ${b64.length} chars, ${w}x${h}, index=${index}, listeners=${this.listeners.size}`
     );
@@ -132,6 +138,13 @@ export class CaptureManager {
         console.error("[CaptureManager] Listener error:", error);
       }
     });
+  }
+
+  /**
+   * 指定されたindexの最新フレームを取得
+   */
+  getLatest(index: number): Frame | undefined {
+    return this.latestByIndex.get(index);
   }
 
   /**

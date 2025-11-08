@@ -7,6 +7,7 @@ export type DrawOptions = {
   debug?: boolean; // 枠線・ID・中心点を表示
   showMask?: boolean; // マスク境界を可視化
   imageCache?: Map<string, HTMLImageElement>; // 画像キャッシュ
+  getUnityImage?: (index: number) => HTMLImageElement | undefined; // Unity画像取得関数
 };
 
 /**
@@ -79,7 +80,7 @@ export function drawPanel(
   panel: Panel,
   options: DrawOptions = {}
 ): void {
-  const { transform, fill, imageSrc } = panel;
+  const { transform, fill, imageSrc, source } = panel;
   const { x, y, width, height, rotation = 0, opacity = 1 } = transform;
 
   ctx.save();
@@ -111,19 +112,26 @@ export function drawPanel(
     ctx.fillRect(0, 0, width, height);
   }
 
-  // 画像描画
-  if (imageSrc && options.imageCache) {
+  // 画像ソースに基づいて描画
+  if (source) {
+    // source が指定されている場合は source を優先
+    if (source.type === "unity" && options.getUnityImage) {
+      const img = options.getUnityImage(source.index);
+      if (img && img.complete) {
+        ctx.drawImage(img, 0, 0, width, height);
+      }
+    } else if (source.type === "image" && options.imageCache) {
+      const img = options.imageCache.get(source.src);
+      if (img && img.complete) {
+        ctx.drawImage(img, 0, 0, width, height);
+      }
+    }
+    // source.type === "none" の場合は何も描画しない
+  } else if (imageSrc && options.imageCache) {
+    // 後方互換性: imageSrc が指定されている場合（非推奨）
     const img = options.imageCache.get(imageSrc);
     if (img && img.complete) {
       ctx.drawImage(img, 0, 0, width, height);
-    }
-  }
-
-  // Unity Live キャプチャの描画（unity-live パネル専用）
-  if (panel.id === "unity-live" && options.imageCache) {
-    const liveImg = options.imageCache.get("unity-live-capture");
-    if (liveImg && liveImg.complete) {
-      ctx.drawImage(liveImg, 0, 0, width, height);
     }
   }
 

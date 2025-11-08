@@ -9,7 +9,7 @@ export const sampleScene: SceneSpec = {
   panels: [
     // Panel 0: Unity Live キャプチャ（最上部）
     {
-      id: "unity-live",
+      id: "unity-live-1",
       transform: {
         x: 60,
         y: 40,
@@ -19,7 +19,7 @@ export const sampleScene: SceneSpec = {
         opacity: 1,
       },
       fill: "#263238",
-      // imageSrc は指定しない（Unity キャプチャを描画）
+      source: { type: "unity", index: 0 },
     },
 
     // Panel 1: タイトル風（大きめ、マスクなし）
@@ -34,7 +34,7 @@ export const sampleScene: SceneSpec = {
         opacity: 1,
       },
       fill: "#e3f2fd",
-      imageSrc: "/sample/p1.svg",
+      source: { type: "image", src: "/sample/p1.svg" },
     },
 
     // Panel 2: 左寄せ、軽いマスク
@@ -56,12 +56,27 @@ export const sampleScene: SceneSpec = {
       fill: "#fff3e0",
     },
 
+    // Unity Live 2: 小さめ、回転あり（同一ストリーム index:0）
+    {
+      id: "unity-live-2",
+      transform: {
+        x: 380,
+        y: 900,
+        width: 320,
+        height: 240,
+        rotation: -2,
+        zIndex: 2,
+      },
+      fill: "#1a1a2e",
+      source: { type: "unity", index: 0 },
+    },
+
     // Panel 3: 右寄せ、回転あり
     {
       id: "panel-3",
       transform: {
         x: 380,
-        y: 940,
+        y: 1180,
         width: 300,
         height: 240,
         rotation: 3,
@@ -74,7 +89,7 @@ export const sampleScene: SceneSpec = {
         left: 8,
       },
       fill: "#f3e5f5",
-      imageSrc: "/sample/p2.svg",
+      source: { type: "image", src: "/sample/p2.svg" },
     },
 
     // Panel 4: フルワイド、薄いマスク
@@ -111,7 +126,7 @@ export const sampleScene: SceneSpec = {
         bottom: 12,
       },
       fill: "#fce4ec",
-      imageSrc: "/sample/p3.svg",
+      source: { type: "image", src: "/sample/p3.svg" },
     },
 
     // Panel 6: 左上、小さめ、回転
@@ -148,14 +163,14 @@ export const sampleScene: SceneSpec = {
       fill: "#e0f2f1",
     },
 
-    // Panel 8: ワイドパネル、不透明度調整
+    // Unity Live 3: ワイドパネル、不透明度調整
     {
-      id: "panel-8",
+      id: "unity-live-3",
       transform: {
         x: 40,
         y: 2520,
         width: 640,
-        height: 300,
+        height: 360,
         opacity: 0.95,
         zIndex: 1,
       },
@@ -165,7 +180,8 @@ export const sampleScene: SceneSpec = {
         bottom: 20,
         left: 20,
       },
-      fill: "#ffebee",
+      fill: "#0f1419",
+      source: { type: "unity", index: 0 },
     },
 
     // Panel 9: 縦長、中央配置

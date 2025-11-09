@@ -34,6 +34,8 @@ declare global {
       h: number,
       index?: number
     ) => void;
+    isBridgeReady?: boolean; // Unity 側の Bridge が準備完了したかのフラグ
+    onBridgeReady?: () => void; // Unity 側から呼ばれる準備完了コールバック
   }
 }
 
@@ -138,7 +140,14 @@ export function sendMessageToUnity(
 
   if (!instance) {
     console.warn(
-      `[Unity] Cannot send message: Unity instance is not ready yet. (${gameObjectName}.${methodName})`
+      `[Unity] ❌ Cannot send message: Unity instance is not ready yet. (${gameObjectName}.${methodName})`
+    );
+    return;
+  }
+
+  if (!instance.SendMessage) {
+    console.error(
+      `[Unity] ❌ SendMessage method is not available on Unity instance!`
     );
     return;
   }
@@ -146,20 +155,72 @@ export function sendMessageToUnity(
   try {
     if (param === undefined) {
       instance.SendMessage(gameObjectName, methodName);
-      console.log(`[Unity] Sent: ${gameObjectName}.${methodName}()`);
+      console.log(`[Unity] ✅ Sent: ${gameObjectName}.${methodName}()`);
     } else {
       instance.SendMessage(gameObjectName, methodName, param);
       console.log(
-        `[Unity] Sent: ${gameObjectName}.${methodName}(${param})`
+        `[Unity] ✅ Sent: ${gameObjectName}.${methodName}("${param}")`
+      );
+      console.log(
+        `[Unity] 📋 Details: GameObject="${gameObjectName}", Method="${methodName}", Param="${param}"`
       );
     }
   } catch (error) {
     console.error(
-      `[Unity] Failed to send message to ${gameObjectName}.${methodName}:`,
+      `[Unity] ❌ Failed to send message to ${gameObjectName}.${methodName}:`,
       error
     );
+    console.error(`[Unity] Error details:`, error);
     throw error;
   }
+}
+
+// ========================================
+// キャプチャ制御関数
+// ========================================
+
+/**
+ * Unity側のキャプチャを開始
+ * @param index - キャプチャストリームのインデックス
+ * @param intervalMs - キャプチャ間隔（ミリ秒）
+ *
+ * 🔮 将来の拡張:
+ * - mode パラメータ追加 (PreCaptureRequest / TickUpdate / Render)
+ * - payload: "index=0;intervalMs=500;mode=PreCaptureRequest"
+ * - Unity 側 Bridge で新しいパラメータをパース
+ */
+export function startUnityCapture(index: number, intervalMs = 500): void {
+  // Bridge が準備できているかチェック
+  if (typeof window !== "undefined" && !window.isBridgeReady) {
+    console.warn(
+      `[Unity] ⚠️ Bridge not ready yet, StartCapture may be ignored. Waiting for onBridgeReady() call from Unity...`
+    );
+  }
+
+  const payload = `index=${index};intervalMs=${intervalMs}`;
+  sendMessageToUnity("Bridge", "StartCapture", payload);
+  console.log(`[Unity] Started capture for index ${index} with interval ${intervalMs}ms`);
+}
+
+/**
+ * Unity側のキャプチャを停止
+ * @param index - キャプチャストリームのインデックス
+ */
+export function stopUnityCapture(index: number): void {
+  const payload = `index=${index}`;
+  sendMessageToUnity("Bridge", "StopCapture", payload);
+  console.log(`[Unity] Stopped capture for index ${index}`);
+}
+
+/**
+ * Unity側のキャプチャ間隔を変更
+ * @param index - キャプチャストリームのインデックス
+ * @param intervalMs - 新しいキャプチャ間隔（ミリ秒）
+ */
+export function setUnityCaptureInterval(index: number, intervalMs: number): void {
+  const payload = `index=${index};intervalMs=${intervalMs}`;
+  sendMessageToUnity("Bridge", "SetInterval", payload);
+  console.log(`[Unity] Set capture interval for index ${index} to ${intervalMs}ms`);
 }
 
 // ========================================
@@ -217,8 +278,59 @@ export function drawBase64ToCanvas(
 // ========================================
 
 if (typeof window !== "undefined") {
+  // Unity からの画像受信
   window.onUnityImageReceived = (b64: string, w: number, h: number, index = 0) => {
     console.log(`[onUnityImageReceived] Received: ${b64.length} chars, ${w}x${h}, index=${index}`);
     drawBase64ToCanvas(b64, w, h, index);
   };
+
+  // Unity 側 Bridge の準備完了シグナル
+  window.isBridgeReady = false;
+  window.onBridgeReady = () => {
+    console.log("[Unity] 🎯 Bridge is ready!");
+    window.isBridgeReady = true;
+
+    // カスタムイベントを発火して、React コンポーネントに通知
+    window.dispatchEvent(new Event("unity-bridge-ready"));
+  };
+
+  // デバッグ用：ブラウザコンソールから直接テストできるヘルパー関数
+  (window as any).unityTest = {
+    start: (index = 0, intervalMs = 500) => {
+      console.log(`[UnityTest] Calling startUnityCapture(${index}, ${intervalMs})`);
+      startUnityCapture(index, intervalMs);
+    },
+    stop: (index = 0) => {
+      console.log(`[UnityTest] Calling stopUnityCapture(${index})`);
+      stopUnityCapture(index);
+    },
+    setInterval: (index = 0, intervalMs = 500) => {
+      console.log(`[UnityTest] Calling setUnityCaptureInterval(${index}, ${intervalMs})`);
+      setUnityCaptureInterval(index, intervalMs);
+    },
+    checkBridge: () => {
+      const hasInstance = !!(window as any).unityInstance;
+      const isReady = !!(window as any).isBridgeReady;
+      console.log(`[UnityTest] Unity Instance: ${hasInstance ? "✅" : "❌"}`);
+      console.log(`[UnityTest] Bridge Ready: ${isReady ? "✅" : "❌"}`);
+      if (hasInstance) {
+        const hasSendMessage = typeof (window as any).unityInstance.SendMessage === "function";
+        console.log(`[UnityTest] SendMessage available: ${hasSendMessage ? "✅" : "❌"}`);
+      }
+      return { hasInstance, isReady };
+    },
+    sendRaw: (gameObject: string, method: string, param?: string) => {
+      console.log(`[UnityTest] Raw send: ${gameObject}.${method}(${param || ""})`);
+      sendMessageToUnity(gameObject, method, param);
+    },
+  };
+
+  console.log(
+    "[Unity] 🧪 Test helpers available in console:\n" +
+    "  unityTest.start(index, intervalMs) - Start capture\n" +
+    "  unityTest.stop(index) - Stop capture\n" +
+    "  unityTest.setInterval(index, intervalMs) - Change interval\n" +
+    "  unityTest.checkBridge() - Check Unity/Bridge status\n" +
+    "  unityTest.sendRaw(gameObject, method, param) - Send raw message"
+  );
 }

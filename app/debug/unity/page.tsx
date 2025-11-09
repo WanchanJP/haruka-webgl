@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { loadUnity, sendMessageToUnity, drawBase64ToCanvas } from "@/lib/unity";
+import { loadUnity, sendMessageToUnity, drawBase64ToCanvas, startUnityCapture, stopUnityCapture, setUnityCaptureInterval } from "@/lib/unity";
 import Link from "next/link";
 import "@/app/globals.css";
 
@@ -90,6 +90,31 @@ export default function DebugUnityPage() {
       drawBase64ToCanvas(b64, 256, 256, 0);
     }
   }, []);
+
+  // 継続的キャプチャの制御
+  const handleStartCapture = useCallback(() => {
+    if (status !== "ready") {
+      console.warn("Unity is not ready yet");
+      return;
+    }
+    startUnityCapture(0, 500);
+  }, [status]);
+
+  const handleStopCapture = useCallback(() => {
+    if (status !== "ready") {
+      console.warn("Unity is not ready yet");
+      return;
+    }
+    stopUnityCapture(0);
+  }, [status]);
+
+  const handleSetInterval = useCallback((intervalMs: number) => {
+    if (status !== "ready") {
+      console.warn("Unity is not ready yet");
+      return;
+    }
+    setUnityCaptureInterval(0, intervalMs);
+  }, [status]);
 
   // ステータス表示用のラベルと色
   const getStatusDisplay = () => {
@@ -189,6 +214,8 @@ export default function DebugUnityPage() {
       {/* 操作パネル */}
       <section className="control-section">
         <h2>操作</h2>
+
+        <h3 style={{ fontSize: "1rem", marginTop: "1rem", marginBottom: "0.5rem" }}>単発キャプチャ</h3>
         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
           <button
             className="capture-button"
@@ -206,10 +233,99 @@ export default function DebugUnityPage() {
             🧪 Canvasテスト（Unityなし）
           </button>
         </div>
-        <p className="control-hint">
+
+        <h3 style={{ fontSize: "1rem", marginTop: "1.5rem", marginBottom: "0.5rem" }}>継続的キャプチャ制御 (index=0)</h3>
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "0.5rem" }}>
+          <button
+            onClick={handleStartCapture}
+            disabled={status !== "ready"}
+            style={{
+              padding: "0.5rem 1rem",
+              background: "#4CAF50",
+              color: "white",
+              border: "none",
+              borderRadius: "4px",
+              cursor: status === "ready" ? "pointer" : "not-allowed",
+              opacity: status === "ready" ? 1 : 0.5,
+            }}
+            title="継続的キャプチャを開始 (500ms間隔)"
+          >
+            ▶️ Start (500ms)
+          </button>
+          <button
+            onClick={handleStopCapture}
+            disabled={status !== "ready"}
+            style={{
+              padding: "0.5rem 1rem",
+              background: "#F44336",
+              color: "white",
+              border: "none",
+              borderRadius: "4px",
+              cursor: status === "ready" ? "pointer" : "not-allowed",
+              opacity: status === "ready" ? 1 : 0.5,
+            }}
+            title="継続的キャプチャを停止"
+          >
+            ⏹️ Stop
+          </button>
+        </div>
+
+        <h3 style={{ fontSize: "1rem", marginTop: "1.5rem", marginBottom: "0.5rem" }}>間隔変更</h3>
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+          <button
+            onClick={() => handleSetInterval(250)}
+            disabled={status !== "ready"}
+            style={{
+              padding: "0.5rem 1rem",
+              background: "#2196F3",
+              color: "white",
+              border: "none",
+              borderRadius: "4px",
+              cursor: status === "ready" ? "pointer" : "not-allowed",
+              opacity: status === "ready" ? 1 : 0.5,
+            }}
+            title="キャプチャ間隔を250msに設定"
+          >
+            ⚡ 250ms
+          </button>
+          <button
+            onClick={() => handleSetInterval(500)}
+            disabled={status !== "ready"}
+            style={{
+              padding: "0.5rem 1rem",
+              background: "#2196F3",
+              color: "white",
+              border: "none",
+              borderRadius: "4px",
+              cursor: status === "ready" ? "pointer" : "not-allowed",
+              opacity: status === "ready" ? 1 : 0.5,
+            }}
+            title="キャプチャ間隔を500msに設定"
+          >
+            ⚙️ 500ms
+          </button>
+          <button
+            onClick={() => handleSetInterval(1000)}
+            disabled={status !== "ready"}
+            style={{
+              padding: "0.5rem 1rem",
+              background: "#2196F3",
+              color: "white",
+              border: "none",
+              borderRadius: "4px",
+              cursor: status === "ready" ? "pointer" : "not-allowed",
+              opacity: status === "ready" ? 1 : 0.5,
+            }}
+            title="キャプチャ間隔を1000msに設定"
+          >
+            🐢 1000ms
+          </button>
+        </div>
+
+        <p className="control-hint" style={{ marginTop: "1rem" }}>
           {status === "ready"
-            ? "📸: Unity からキャプチャ / 🧪: Unityなしテスト"
-            : "Unity準備中... 🧪ボタンは使用可能です"}
+            ? "▶️ Start でキャプチャ開始 / ⏹️ Stop で停止 / 間隔ボタンで速度変更"
+            : "Unity準備中..."}
         </p>
       </section>
     </main>

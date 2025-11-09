@@ -47,6 +47,8 @@ export class CaptureManager {
   /**
    * 可視状態を設定
    * @param hasVisible - 可視パネルが1つ以上存在するか
+   * @deprecated この機能は新しい startUnityCapture/stopUnityCapture に移行しました
+   * 互換性のために残していますが、何もしません
    */
   setVisibleState(hasVisible: boolean) {
     const stateChanged = this.hasVisible !== hasVisible;
@@ -54,15 +56,12 @@ export class CaptureManager {
 
     if (stateChanged) {
       console.log(
-        `[CaptureManager] Visible state changed: ${hasVisible ? "has visible panels" : "no visible panels"}`
+        `[CaptureManager] Visible state changed: ${hasVisible ? "has visible panels" : "no visible panels"} (deprecated, no action taken)`
       );
     }
 
-    if (hasVisible && this.isTabVisible) {
-      this.start();
-    } else {
-      this.stop();
-    }
+    // 新しい startUnityCapture/stopUnityCapture が Unity 側を直接制御するため、
+    // ここでは何もしません（旧方式の start()/stop() を呼ばない）
   }
 
   /**

@@ -15,6 +15,7 @@ import {
 import { calculateSceneHeight } from "@/lib/layout/panel-sample";
 import { captureManager } from "@/lib/capture/capture-manager";
 import { installUnityReceiverBridge } from "@/lib/capture/install-receiver";
+import { startUnityCapture, stopUnityCapture } from "@/lib/unity";
 
 type PanelCanvasProps = {
   scene: SceneSpec;
@@ -46,6 +47,155 @@ export default function PanelCanvas({
     new Set()
   );
   const [needsRedraw, setNeedsRedraw] = useState(true);
+  const activeUnityIndexes = useRef<Set<number>>(new Set());
+
+  // デバッグパネルの表示/非表示（初回レンダリングは常に true、マウント後に localStorage から復元）
+  const [showDebugPanel, setShowDebugPanel] = useState(true);
+
+  // デバッグ情報の状態
+  const [debugInfo, setDebugInfo] = useState({
+    unityInstance: false,
+    bridgeReady: false,
+    visibleUnityIndexes: [] as number[],
+    lastStartCommand: "",
+    lastStopCommand: "",
+    lastImageReceived: "",
+    imageCount: 0,
+    captureManagerState: "",
+    memoryMB: 0,
+    cachedImagesCount: 0,
+    fps: 0,
+    storageUsageMB: 0,
+    storageQuotaMB: 0,
+    localStorageKB: 0,
+    sessionStorageKB: 0,
+    indexedDBMB: 0,
+  });
+
+  // マウント後に localStorage から showDebugPanel を復元（Hydration エラー回避）
+  useEffect(() => {
+    const saved = localStorage.getItem('showDebugPanel');
+    if (saved !== null) {
+      setShowDebugPanel(saved === 'true');
+    }
+  }, []);
+
+  // デバッグパネルのキーボードショートカット（U キー）
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // U キー（大文字小文字どちらでも）
+      if (e.key === 'u' || e.key === 'U') {
+        // input/textarea にフォーカスがある場合は無視
+        const target = e.target as HTMLElement;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
+          return;
+        }
+
+        setShowDebugPanel((prev) => {
+          const newValue = !prev;
+          localStorage.setItem('showDebugPanel', String(newValue));
+          console.log(`[Unity Capture Debug] Panel ${newValue ? 'shown' : 'hidden'} (press U to toggle)`);
+          return newValue;
+        });
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // FPS 計測
+  useEffect(() => {
+    let frameCount = 0;
+    let lastTime = performance.now();
+    let animationFrameId: number;
+
+    const measureFPS = () => {
+      frameCount++;
+      const currentTime = performance.now();
+      const elapsed = currentTime - lastTime;
+
+      // 1秒ごとに FPS を更新
+      if (elapsed >= 1000) {
+        const fps = Math.round((frameCount * 1000) / elapsed);
+        setDebugInfo((prev) => ({ ...prev, fps }));
+        frameCount = 0;
+        lastTime = currentTime;
+      }
+
+      animationFrameId = requestAnimationFrame(measureFPS);
+    };
+
+    animationFrameId = requestAnimationFrame(measureFPS);
+
+    return () => cancelAnimationFrame(animationFrameId);
+  }, []);
+
+  // デバッグ情報の定期更新（メモリ・ストレージ）
+  useEffect(() => {
+    const updateDebugInfo = async () => {
+      // メモリ使用量を取得（Chrome のみ）
+      const memoryMB = (window.performance as any).memory
+        ? ((window.performance as any).memory.usedJSHeapSize / 1024 / 1024).toFixed(1)
+        : 0;
+
+      // Storage API でストレージ使用量を取得
+      let storageUsageMB = 0;
+      let storageQuotaMB = 0;
+      if (navigator.storage && navigator.storage.estimate) {
+        try {
+          const estimate = await navigator.storage.estimate();
+          storageUsageMB = Number(((estimate.usage || 0) / 1024 / 1024).toFixed(1));
+          storageQuotaMB = Number(((estimate.quota || 0) / 1024 / 1024).toFixed(0));
+        } catch (e) {
+          console.warn('[Debug] Storage API error:', e);
+        }
+      }
+
+      // LocalStorage のサイズを推定
+      let localStorageKB = 0;
+      try {
+        const localStorageStr = JSON.stringify(localStorage);
+        localStorageKB = Number((new Blob([localStorageStr]).size / 1024).toFixed(1));
+      } catch (e) {
+        // localStorage が無効な場合
+      }
+
+      // SessionStorage のサイズを推定
+      let sessionStorageKB = 0;
+      try {
+        const sessionStorageStr = JSON.stringify(sessionStorage);
+        sessionStorageKB = Number((new Blob([sessionStorageStr]).size / 1024).toFixed(1));
+      } catch (e) {
+        // sessionStorage が無効な場合
+      }
+
+      // IndexedDB のサイズを推定（詳細は取得困難なので Storage API の usage を使用）
+      const indexedDBMB = storageUsageMB; // 近似値
+
+      setDebugInfo((prev) => ({
+        ...prev,
+        unityInstance: !!(window as any).unityInstance,
+        bridgeReady: !!(window as any).isBridgeReady,
+        captureManagerState: JSON.stringify(captureManager.getState()),
+        memoryMB: Number(memoryMB),
+        cachedImagesCount: unityImagesRef.current.size,
+        storageUsageMB,
+        storageQuotaMB,
+        localStorageKB,
+        sessionStorageKB,
+        indexedDBMB,
+      }));
+    };
+
+    // 初回更新
+    updateDebugInfo();
+
+    // 2秒ごとに更新（Storage API は重いため）
+    const interval = setInterval(updateDebugInfo, 2000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   // Unity受信ブリッジのインストールとキャプチャ受信
   useEffect(() => {
@@ -57,24 +207,39 @@ export default function PanelCanvas({
         `[PanelCanvas] Received Unity capture: ${b64.length} chars, ${w}x${h}, index=${index}`
       );
 
+      // デバッグ情報を更新
+      setDebugInfo((prev) => ({
+        ...prev,
+        lastImageReceived: `${w}x${h}, index=${index}, ${new Date().toLocaleTimeString()}`,
+        imageCount: prev.imageCount + 1,
+      }));
+
       // index ベースで Unity 画像を保存
       let img = unityImagesRef.current.get(index);
-      if (!img) {
+      const isNewImage = !img;
+
+      if (isNewImage) {
         console.log(`[PanelCanvas] Creating new Image for index ${index}`);
         img = new Image();
         unityImagesRef.current.set(index, img);
+
+        // onload は一度だけ設定（重複を防ぐ）
         img.onload = () => {
           console.log(`[PanelCanvas] Unity image loaded for index ${index}, requesting redraw`);
           setNeedsRedraw(true);
         };
-      } else {
-        // 既存の画像を更新
-        img.onload = () => {
-          console.log(`[PanelCanvas] Unity image updated for index ${index}, requesting redraw`);
-          setNeedsRedraw(true);
-        };
       }
+
+      // src を更新（onload は既に設定済み）
       img.src = `data:image/png;base64,${b64}`;
+
+      // 📊 メモリ使用量のデバッグ（開発時のみ）
+      if (process.env.NODE_ENV === 'development' && performance.memory) {
+        const memMB = (performance.memory.usedJSHeapSize / 1024 / 1024).toFixed(1);
+        if (Math.random() < 0.1) { // 10% の確率でログ出力（spam 防止）
+          console.log(`[PanelCanvas] 💾 Memory: ${memMB} MB (${isNewImage ? 'new' : 'updated'} image)`);
+        }
+      }
     });
 
     console.log("[PanelCanvas] Unity image listener registered");
@@ -163,8 +328,11 @@ export default function PanelCanvas({
     const newVisibleIds = new Set(visible.map((p) => p.id));
 
     console.log(
-      `[updateVisibleRange] Range: ${newRange.top.toFixed(0)}-${newRange.bottom.toFixed(0)}, Visible panels:`,
+      `[updateVisibleRange] 📍 Range: ${newRange.top.toFixed(0)}-${newRange.bottom.toFixed(0)}, Visible panels:`,
       Array.from(newVisibleIds)
+    );
+    console.log(
+      `[updateVisibleRange] 📊 Total panels in scene: ${scene.panels.length}, Visible count: ${visible.length}`
     );
 
     // Enter/Leaveイベントの発火（前回の状態を参照するためrefを使う）
@@ -187,16 +355,87 @@ export default function PanelCanvas({
       return newVisibleIds;
     });
 
-    // CaptureManager に可視状態を通知（Unityパネルが可視範囲にある場合のみ）
-    const hasVisibleUnityPanels = scene.panels.some(
-      (p) => p.source?.type === "unity" && newVisibleIds.has(p.id)
-    );
+    // 可視 Unity パネルの index を収集
+    const newVisibleUnityIndexes = new Set<number>();
+    const allUnityPanels = scene.panels.filter((p) => p.source?.type === "unity");
 
     console.log(
-      `[updateVisibleRange] Unity panels visible: ${hasVisibleUnityPanels}, calling setVisibleState(${hasVisibleUnityPanels})`
+      `[updateVisibleRange] 🎮 Total Unity panels in scene: ${allUnityPanels.length}`,
+      allUnityPanels.map(p => ({ id: p.id, index: p.source?.index, visible: newVisibleIds.has(p.id) }))
     );
 
-    captureManager.setVisibleState(hasVisibleUnityPanels);
+    scene.panels.forEach((p) => {
+      if (p.source?.type === "unity" && newVisibleIds.has(p.id)) {
+        console.log(`[updateVisibleRange] ✅ Adding Unity index ${p.source.index} from panel ${p.id}`);
+        newVisibleUnityIndexes.add(p.source.index);
+      }
+    });
+
+    // 前回との差分を取って Start/Stop を送信
+    const prevIndexes = activeUnityIndexes.current;
+    console.log(
+      `[updateVisibleRange] 🔄 Previous indexes: [${Array.from(prevIndexes).join(", ")}], New indexes: [${Array.from(newVisibleUnityIndexes).join(", ")}]`
+    );
+
+    // 新規に可視になった index → Start
+    newVisibleUnityIndexes.forEach((index) => {
+      if (!prevIndexes.has(index)) {
+        console.log(`[updateVisibleRange] Starting Unity capture for index ${index}`);
+        startUnityCapture(index, 500);
+
+        // デバッグ情報を更新
+        setDebugInfo((prev) => ({
+          ...prev,
+          lastStartCommand: `index=${index}, ${new Date().toLocaleTimeString()}`,
+        }));
+      }
+    });
+
+    // 可視でなくなった index → Stop & メモリ解放
+    prevIndexes.forEach((index) => {
+      if (!newVisibleUnityIndexes.has(index)) {
+        console.log(`[updateVisibleRange] Stopping Unity capture for index ${index}`);
+        stopUnityCapture(index);
+
+        // デバッグ情報を更新
+        setDebugInfo((prev) => ({
+          ...prev,
+          lastStopCommand: `index=${index}, ${new Date().toLocaleTimeString()}`,
+        }));
+
+        // 🧹 メモリ最適化：可視範囲外の画像を削除
+        // ただし、すぐに再度可視になる可能性があるため、遅延削除
+        setTimeout(() => {
+          // 5秒後にまだ可視でなければ削除
+          if (!activeUnityIndexes.current.has(index)) {
+            const img = unityImagesRef.current.get(index);
+            if (img) {
+              console.log(`[updateVisibleRange] 🧹 Cleaning up image for index ${index}`);
+              img.src = ""; // メモリ解放
+              unityImagesRef.current.delete(index);
+            }
+          }
+        }, 5000);
+      }
+    });
+
+    // 現在の可視 index を保存
+    activeUnityIndexes.current = newVisibleUnityIndexes;
+
+    // デバッグ情報を更新
+    setDebugInfo((prev) => ({
+      ...prev,
+      visibleUnityIndexes: Array.from(newVisibleUnityIndexes),
+    }));
+
+    // 🆕 新方式: 上記の startUnityCapture/stopUnityCapture が Unity 側 Bridge を直接制御
+    // 📊 CaptureManager への通知は deprecated だが、画像受信のリスナー登録には必要なので残す
+    const hasVisibleUnityPanels = newVisibleUnityIndexes.size > 0;
+    console.log(
+      `[updateVisibleRange] Unity indexes visible: [${Array.from(newVisibleUnityIndexes).join(", ")}]`
+    );
+
+    captureManager.setVisibleState(hasVisibleUnityPanels); // deprecated, 何もしない
 
     if (debug) {
       const unityPanels = scene.panels.filter((p) => p.source?.type === "unity");
@@ -241,24 +480,64 @@ export default function PanelCanvas({
       updateVisibleRange();
     }, 100);
 
-    // Unity初期化完了を待って再度チェック
+    // Unity Bridge 準備完了を待って再度チェック
+    // 1. まず Unity インスタンスの存在をチェック
+    // 2. 次に Bridge が準備完了するまで待つ
     let unityCheckAttempts = 0;
     const maxAttempts = 60; // 最大30秒待つ（500ms × 60）
-    const unityCheckInterval = setInterval(() => {
-      unityCheckAttempts++;
-      if ((window as any).unityInstance) {
-        console.log("[PanelCanvas] Unity instance ready, running updateVisibleRange");
+
+    const checkUnityAndBridge = () => {
+      const hasUnityInstance = !!(window as any).unityInstance;
+      const isBridgeReady = !!(window as any).isBridgeReady;
+
+      if (hasUnityInstance && isBridgeReady) {
+        console.log("[PanelCanvas] ✅ Unity instance AND Bridge ready, running updateVisibleRange");
         clearInterval(unityCheckInterval);
         updateVisibleRange();
+        return true;
+      } else if (hasUnityInstance && !isBridgeReady) {
+        console.log(`[PanelCanvas] Unity instance ready, waiting for Bridge... (attempt ${unityCheckAttempts}/${maxAttempts})`);
+        return false;
+      } else {
+        console.log(`[PanelCanvas] Waiting for Unity instance... (attempt ${unityCheckAttempts}/${maxAttempts})`);
+        return false;
+      }
+    };
+
+    const unityCheckInterval = setInterval(() => {
+      unityCheckAttempts++;
+      if (checkUnityAndBridge()) {
+        // 成功
       } else if (unityCheckAttempts >= maxAttempts) {
-        console.warn("[PanelCanvas] Unity instance check timeout");
+        console.warn("[PanelCanvas] Unity/Bridge check timeout");
         clearInterval(unityCheckInterval);
       }
     }, 500);
 
+    // Bridge 準備完了イベントをリスン（イベント駆動で即座に反応）
+    const handleBridgeReady = () => {
+      console.log("[PanelCanvas] 🎯 Received unity-bridge-ready event, calling updateVisibleRange");
+      clearInterval(unityCheckInterval);
+
+      // 少し遅延させて、DOMが完全に準備されてから実行
+      setTimeout(() => {
+        console.log("[PanelCanvas] Executing delayed updateVisibleRange after Bridge ready");
+
+        // ⭐ 重要：Bridge 準備完了前に記録された index をクリアして、再度 Start を送信
+        console.log(
+          `[PanelCanvas] Resetting activeUnityIndexes (was: [${Array.from(activeUnityIndexes.current).join(", ")}])`
+        );
+        activeUnityIndexes.current.clear();
+
+        updateVisibleRange();
+      }, 100);
+    };
+    window.addEventListener("unity-bridge-ready", handleBridgeReady);
+
     window.addEventListener("resize", handleResize);
     return () => {
       window.removeEventListener("resize", handleResize);
+      window.removeEventListener("unity-bridge-ready", handleBridgeReady);
       clearTimeout(initialCheckTimer);
       clearInterval(unityCheckInterval);
     };
@@ -336,6 +615,138 @@ export default function PanelCanvas({
           margin: "0 auto",
         }}
       />
+
+      {/* デバッグオーバーレイ（開発時のみ表示、U キーで切り替え） */}
+      {process.env.NODE_ENV === "development" && showDebugPanel && (
+        <div
+          style={{
+            position: "fixed",
+            top: "10px",
+            left: "10px",
+            background: "rgba(0, 0, 0, 0.85)",
+            color: "#fff",
+            padding: "12px",
+            borderRadius: "6px",
+            fontSize: "11px",
+            fontFamily: "monospace",
+            zIndex: 10000,
+            maxWidth: "350px",
+            lineHeight: "1.6",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+          }}
+        >
+          <div style={{ fontWeight: "bold", marginBottom: "8px", fontSize: "12px" }}>
+            🔍 Unity Capture Debug
+          </div>
+
+          <div style={{ display: "grid", gap: "4px" }}>
+            <div>
+              Unity Instance:{" "}
+              <span style={{ color: debugInfo.unityInstance ? "#0f0" : "#f00" }}>
+                {debugInfo.unityInstance ? "✅ Ready" : "❌ Not Ready"}
+              </span>
+            </div>
+
+            <div>
+              Bridge Ready:{" "}
+              <span style={{ color: debugInfo.bridgeReady ? "#0f0" : "#f00" }}>
+                {debugInfo.bridgeReady ? "✅ Ready" : "❌ Not Ready"}
+              </span>
+            </div>
+
+            <div style={{ borderTop: "1px solid #444", paddingTop: "4px", marginTop: "4px" }}>
+              Visible Unity Indexes:{" "}
+              <span style={{ color: "#ff0" }}>
+                {debugInfo.visibleUnityIndexes.length > 0
+                  ? `[${debugInfo.visibleUnityIndexes.join(", ")}]`
+                  : "None"}
+              </span>
+            </div>
+
+            <div>
+              Last Start:{" "}
+              <span style={{ color: "#0f0" }}>
+                {debugInfo.lastStartCommand || "—"}
+              </span>
+            </div>
+
+            <div>
+              Last Stop:{" "}
+              <span style={{ color: "#f44" }}>
+                {debugInfo.lastStopCommand || "—"}
+              </span>
+            </div>
+
+            <div style={{ borderTop: "1px solid #444", paddingTop: "4px", marginTop: "4px" }}>
+              Images Received:{" "}
+              <span style={{ color: "#0ff" }}>{debugInfo.imageCount}</span>
+            </div>
+
+            <div>
+              Last Image:{" "}
+              <span style={{ color: "#0ff" }}>
+                {debugInfo.lastImageReceived || "—"}
+              </span>
+            </div>
+
+            <div style={{ borderTop: "1px solid #444", paddingTop: "4px", marginTop: "4px" }}>
+              🎬 FPS:{" "}
+              <span style={{
+                color: debugInfo.fps >= 55 ? "#0f0" : debugInfo.fps >= 30 ? "#ff0" : "#f00"
+              }}>
+                {debugInfo.fps}
+              </span>
+            </div>
+
+            <div style={{ borderTop: "1px solid #444", paddingTop: "4px", marginTop: "4px" }}>
+              💾 JS Heap:{" "}
+              <span style={{ color: debugInfo.memoryMB > 200 ? "#f80" : "#0f0" }}>
+                {debugInfo.memoryMB} MB
+              </span>
+            </div>
+
+            <div>
+              🖼️ Cached Images:{" "}
+              <span style={{ color: "#0ff" }}>
+                {debugInfo.cachedImagesCount} / 3 indexes
+              </span>
+            </div>
+
+            <div style={{ borderTop: "1px solid #444", paddingTop: "4px", marginTop: "4px" }}>
+              💿 Storage:{" "}
+              <span style={{ color: "#0ff" }}>
+                {debugInfo.storageUsageMB} / {debugInfo.storageQuotaMB} MB
+              </span>
+            </div>
+
+            <div style={{ paddingLeft: "12px", fontSize: "10px", color: "#999" }}>
+              └ LocalStorage:{" "}
+              <span style={{ color: "#0ff" }}>{debugInfo.localStorageKB} KB</span>
+            </div>
+
+            <div style={{ paddingLeft: "12px", fontSize: "10px", color: "#999" }}>
+              └ SessionStorage:{" "}
+              <span style={{ color: "#0ff" }}>{debugInfo.sessionStorageKB} KB</span>
+            </div>
+
+            <div style={{ paddingLeft: "12px", fontSize: "10px", color: "#999" }}>
+              └ IndexedDB/Cache:{" "}
+              <span style={{ color: "#0ff" }}>{debugInfo.indexedDBMB} MB</span>
+            </div>
+
+            <div style={{ borderTop: "1px solid #444", paddingTop: "4px", marginTop: "4px", fontSize: "10px" }}>
+              Capture Manager:{" "}
+              <span style={{ color: "#aaa", wordBreak: "break-all" }}>
+                {debugInfo.captureManagerState}
+              </span>
+            </div>
+
+            <div style={{ borderTop: "1px solid #444", paddingTop: "4px", marginTop: "4px", fontSize: "10px", color: "#888", textAlign: "center" }}>
+              Press [U] to toggle debug
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

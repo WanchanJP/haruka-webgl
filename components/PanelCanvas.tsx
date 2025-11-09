@@ -49,6 +49,7 @@ export default function PanelCanvas({
 
   // Unity受信ブリッジのインストールとキャプチャ受信
   useEffect(() => {
+    console.log("[PanelCanvas] Installing Unity receiver bridge");
     installUnityReceiverBridge();
 
     const unsubscribe = captureManager.onImage((b64, w, h, index) => {
@@ -59,20 +60,24 @@ export default function PanelCanvas({
       // index ベースで Unity 画像を保存
       let img = unityImagesRef.current.get(index);
       if (!img) {
+        console.log(`[PanelCanvas] Creating new Image for index ${index}`);
         img = new Image();
         unityImagesRef.current.set(index, img);
         img.onload = () => {
+          console.log(`[PanelCanvas] Unity image loaded for index ${index}, requesting redraw`);
           setNeedsRedraw(true);
         };
       } else {
         // 既存の画像を更新
         img.onload = () => {
+          console.log(`[PanelCanvas] Unity image updated for index ${index}, requesting redraw`);
           setNeedsRedraw(true);
         };
       }
       img.src = `data:image/png;base64,${b64}`;
     });
 
+    console.log("[PanelCanvas] Unity image listener registered");
     return () => unsubscribe();
   }, []);
 
@@ -100,7 +105,9 @@ export default function PanelCanvas({
 
   // Unity画像取得関数
   const getUnityImage = useCallback((index: number) => {
-    return unityImagesRef.current.get(index);
+    const img = unityImagesRef.current.get(index);
+    console.log(`[getUnityImage] index=${index}, found=${!!img}, complete=${img?.complete}`);
+    return img;
   }, []);
 
   // Canvas描画関数
@@ -111,33 +118,54 @@ export default function PanelCanvas({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
+    // デバッグ: 描画時の可視パネルを確認
+    if (debug) {
+      const unityPanels = scene.panels.filter((p) => p.source?.type === "unity");
+      console.log(
+        `[drawCanvas] Rendering with visible Unity panels:`,
+        unityPanels.map((p) => ({
+          id: p.id,
+          visible: visiblePanelIds.has(p.id),
+        }))
+      );
+    }
+
     const options: DrawOptions = {
       debug,
       showMask,
       imageCache,
       getUnityImage,
+      isPanelVisible: (panelId) => visiblePanelIds.has(panelId),
     };
 
     drawScene(ctx, scene, options);
-  }, [scene, debug, showMask, imageCache, getUnityImage]);
+  }, [scene, debug, showMask, imageCache, getUnityImage, visiblePanelIds]);
 
   // 可視範囲の更新
   const updateVisibleRange = useCallback(() => {
     const container = containerRef.current;
-    if (!container) return;
+    if (!container) {
+      console.log("[updateVisibleRange] Container not found");
+      return;
+    }
 
     const newRange = getVisibleRangeFromContainer(container);
     setVisibleRange(newRange);
 
-    // 可視パネルの計算
+    // 可視パネルの計算（80%以上可視で表示）
     const visible = getVisiblePanels(
       scene.panels,
       newRange,
       scene.viewportWidth,
-      0.1
+      0.8
     );
 
     const newVisibleIds = new Set(visible.map((p) => p.id));
+
+    console.log(
+      `[updateVisibleRange] Range: ${newRange.top.toFixed(0)}-${newRange.bottom.toFixed(0)}, Visible panels:`,
+      Array.from(newVisibleIds)
+    );
 
     // Enter/Leaveイベントの発火（前回の状態を参照するためrefを使う）
     setVisiblePanelIds((prevVisibleIds) => {
@@ -159,15 +187,28 @@ export default function PanelCanvas({
       return newVisibleIds;
     });
 
-    // CaptureManager に可視状態を通知
-    const hasVisiblePanels = newVisibleIds.size > 0;
-    captureManager.setVisibleState(hasVisiblePanels);
+    // CaptureManager に可視状態を通知（Unityパネルが可視範囲にある場合のみ）
+    const hasVisibleUnityPanels = scene.panels.some(
+      (p) => p.source?.type === "unity" && newVisibleIds.has(p.id)
+    );
+
+    console.log(
+      `[updateVisibleRange] Unity panels visible: ${hasVisibleUnityPanels}, calling setVisibleState(${hasVisibleUnityPanels})`
+    );
+
+    captureManager.setVisibleState(hasVisibleUnityPanels);
 
     if (debug) {
+      const unityPanels = scene.panels.filter((p) => p.source?.type === "unity");
       console.log(
         `[PanelCanvas] Visible range: ${newRange.top.toFixed(0)} - ${newRange.bottom.toFixed(0)}`,
         `Panels: [${Array.from(newVisibleIds).join(", ")}]`,
-        `Capture: ${hasVisiblePanels ? "ACTIVE" : "INACTIVE"}`
+        `Unity Panels:`,
+        unityPanels.map((p) => ({
+          id: p.id,
+          visible: newVisibleIds.has(p.id),
+        })),
+        `Capture: ${hasVisibleUnityPanels ? "ACTIVE" : "INACTIVE"}`
       );
     }
 
@@ -190,11 +231,37 @@ export default function PanelCanvas({
       }
     };
 
+    console.log("[PanelCanvas] Canvas initialized, calling initial updateVisibleRange");
     handleResize();
     updateVisibleRange();
 
+    // 初期表示時にもう一度チェック（DOMが完全に準備された後）
+    const initialCheckTimer = setTimeout(() => {
+      console.log("[PanelCanvas] Running delayed updateVisibleRange (100ms)");
+      updateVisibleRange();
+    }, 100);
+
+    // Unity初期化完了を待って再度チェック
+    let unityCheckAttempts = 0;
+    const maxAttempts = 60; // 最大30秒待つ（500ms × 60）
+    const unityCheckInterval = setInterval(() => {
+      unityCheckAttempts++;
+      if ((window as any).unityInstance) {
+        console.log("[PanelCanvas] Unity instance ready, running updateVisibleRange");
+        clearInterval(unityCheckInterval);
+        updateVisibleRange();
+      } else if (unityCheckAttempts >= maxAttempts) {
+        console.warn("[PanelCanvas] Unity instance check timeout");
+        clearInterval(unityCheckInterval);
+      }
+    }, 500);
+
     window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      clearTimeout(initialCheckTimer);
+      clearInterval(unityCheckInterval);
+    };
   }, [scene, updateVisibleRange]);
 
   // スクロールハンドラ

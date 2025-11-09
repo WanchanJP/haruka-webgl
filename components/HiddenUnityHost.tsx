@@ -86,6 +86,38 @@ export default function HiddenUnityHost() {
     };
   }, []);
 
+  // AudioContext の自動再生警告を防ぐため、初回のユーザー操作で音声を再開
+  useEffect(() => {
+    if (status !== "ready") return;
+
+    const resumeAudio = () => {
+      try {
+        const instance = (window as any).unityInstance;
+        if (instance?.Module?.resumeAudioContext) {
+          console.log("[HiddenUnityHost] Resuming Unity AudioContext");
+          instance.Module.resumeAudioContext();
+        }
+      } catch (e) {
+        console.warn("[HiddenUnityHost] Failed to resume AudioContext:", e);
+      }
+      // イベントリスナーを削除（一度だけ実行）
+      document.removeEventListener("click", resumeAudio);
+      document.removeEventListener("touchstart", resumeAudio);
+      document.removeEventListener("keydown", resumeAudio);
+    };
+
+    console.log("[HiddenUnityHost] Setting up audio resume listeners");
+    document.addEventListener("click", resumeAudio, { once: true });
+    document.addEventListener("touchstart", resumeAudio, { once: true });
+    document.addEventListener("keydown", resumeAudio, { once: true });
+
+    return () => {
+      document.removeEventListener("click", resumeAudio);
+      document.removeEventListener("touchstart", resumeAudio);
+      document.removeEventListener("keydown", resumeAudio);
+    };
+  }, [status]);
+
   // デバッグ情報（開発時のみ表示）
   if (process.env.NODE_ENV === "development" && status !== "idle") {
     return (

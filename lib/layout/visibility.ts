@@ -120,3 +120,18 @@ export function getVisibleRangeFromContainer(
     bottom: container.scrollTop + container.clientHeight,
   };
 }
+
+/**
+ * アンカーY座標がパネルの範囲内にあるかを判定
+ * @param panel パネル
+ * @param anchorY アンカーY座標（例: ビューポート中央やボトムのY座標）
+ * @returns アンカーがパネル範囲内にあれば true
+ */
+export function isPanelAnchoredVisible(
+  panel: Panel,
+  anchorY: number
+): boolean {
+  const top = panel.transform.y;
+  const bottom = top + panel.transform.height;
+  return anchorY >= top && anchorY < bottom;
+}

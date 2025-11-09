@@ -8,6 +8,7 @@ export type DrawOptions = {
   showMask?: boolean; // マスク境界を可視化
   imageCache?: Map<string, HTMLImageElement>; // 画像キャッシュ
   getUnityImage?: (index: number) => HTMLImageElement | undefined; // Unity画像取得関数
+  isPanelVisible?: (panelId: string) => boolean; // パネル可視判定関数（なければ常に可視扱い）
 };
 
 /**
@@ -116,9 +117,16 @@ export function drawPanel(
   if (source) {
     // source が指定されている場合は source を優先
     if (source.type === "unity" && options.getUnityImage) {
-      const img = options.getUnityImage(source.index);
-      if (img && img.complete) {
-        ctx.drawImage(img, 0, 0, width, height);
+      // 可視範囲でなければ Unity 画像は描かない
+      const isVisible = options.isPanelVisible
+        ? options.isPanelVisible(panel.id)
+        : true; // isPanelVisible が未指定なら常に可視扱い
+
+      if (isVisible) {
+        const img = options.getUnityImage(source.index);
+        if (img && img.complete) {
+          ctx.drawImage(img, 0, 0, width, height);
+        }
       }
     } else if (source.type === "image" && options.imageCache) {
       const img = options.imageCache.get(source.src);

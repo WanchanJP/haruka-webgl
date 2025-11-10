@@ -1,0 +1,11 @@
+services:
+  app:
+    build: .
+    image: haruka-next:latest
+    container_name: haruka-next
+    # 外部へ公開せず Apache からのみ叩かれるように 127.0.0.1 に束縛
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      - NODE_ENV=production
+    restart: unless-stopped

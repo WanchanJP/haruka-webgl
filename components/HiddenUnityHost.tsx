@@ -13,6 +13,7 @@ export default function HiddenUnityHost() {
     "idle"
   );
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState(0);
 
   useEffect(() => {
     let mounted = true;
@@ -52,18 +53,45 @@ export default function HiddenUnityHost() {
           console.log("[HiddenUnityHost] Canvas element already exists");
         }
 
-        // Unity 初期化（タイムアウト付き）
+        // Unity 初期化（タイムアウト付き・プログレス表示付き）
         const timeoutPromise = new Promise<never>((_, reject) => {
           setTimeout(() => {
             reject(
               new Error(
-                "Unity initialization timed out after 60 seconds in HiddenUnityHost"
+                "Unity initialization timed out after 90 seconds in HiddenUnityHost"
               )
             );
-          }, 60000);
+          }, 90000); // 90秒に設定（余裕を持たせつつ無駄に長くしない）
         });
 
-        await Promise.race([loadUnity(), timeoutPromise]);
+        // 疑似プログレスバー（Unity が実際のプログレスを報告しない場合の代替）
+        let fakeProgress = 0;
+        const progressInterval = setInterval(() => {
+          if (fakeProgress < 90) {
+            fakeProgress += Math.random() * 2; // ランダムに増加（最大90%まで）
+            if (mounted) {
+              setProgress(Math.round(fakeProgress));
+            }
+          }
+        }, 200);
+
+        try {
+          await Promise.race([
+            loadUnity((p) => {
+              console.log(`[HiddenUnityHost] Progress: ${(p * 100).toFixed(1)}%`);
+              if (mounted) {
+                clearInterval(progressInterval); // 実際のプログレスが来たら疑似プログレスを停止
+                setProgress(Math.round(p * 100));
+              }
+            }),
+            timeoutPromise
+          ]);
+        } finally {
+          clearInterval(progressInterval);
+          if (mounted) {
+            setProgress(100); // 完了時は100%
+          }
+        }
 
         if (mounted) {
           console.log("[HiddenUnityHost] ✅ Unity initialized successfully");
@@ -118,8 +146,8 @@ export default function HiddenUnityHost() {
     };
   }, [status]);
 
-  // デバッグ情報（開発時のみ表示）
-  if (process.env.NODE_ENV === "development" && status !== "idle") {
+  // Unity 初期化状態の表示（loading または error の時のみ表示）
+  if (status === "loading" || status === "error") {
     return (
       <div
         style={{
@@ -138,16 +166,42 @@ export default function HiddenUnityHost() {
       >
         <div
           style={{
-            color:
-              status === "ready"
-                ? "#0f0"
-                : status === "loading"
-                  ? "#ff0"
-                  : "#f00",
+            color: status === "loading" ? "#ff0" : "#f00",
           }}
         >
           🔧 Hidden Unity: {status}
         </div>
+        {status === "loading" && (
+          <div style={{ marginTop: "6px" }}>
+            <div
+              style={{
+                fontSize: "10px",
+                color: "#ccc",
+                marginBottom: "4px",
+              }}
+            >
+              Loading... {progress}%
+            </div>
+            <div
+              style={{
+                width: "100%",
+                height: "4px",
+                background: "#333",
+                borderRadius: "2px",
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  width: `${progress}%`,
+                  height: "100%",
+                  background: "linear-gradient(90deg, #4CAF50, #8BC34A)",
+                  transition: "width 0.3s ease",
+                }}
+              />
+            </div>
+          </div>
+        )}
         {error && (
           <div style={{ color: "#f00", marginTop: "4px", fontSize: "10px" }}>
             {error}

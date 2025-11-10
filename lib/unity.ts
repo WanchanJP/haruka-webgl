@@ -21,24 +21,6 @@ interface UnityConfig {
   productVersion: string;
 }
 
-declare global {
-  interface Window {
-    createUnityInstance?: (
-      canvas: HTMLCanvasElement,
-      config: UnityConfig
-    ) => Promise<any>;
-    unityInstance?: any;
-    onUnityImageReceived?: (
-      b64: string,
-      w: number,
-      h: number,
-      index?: number
-    ) => void;
-    isBridgeReady?: boolean; // Unity 側の Bridge が準備完了したかのフラグ
-    onBridgeReady?: () => void; // Unity 側から呼ばれる準備完了コールバック
-  }
-}
-
 // ========================================
 // ヘルパー関数
 // ========================================
@@ -109,8 +91,15 @@ export async function loadUnity(
     console.log("[Unity] Creating Unity instance with config:", config);
     console.log("[Unity] This may take a while for large builds...");
 
+    if (onProgress) {
+      console.log("[Unity] Progress callback provided, will report loading progress");
+    }
+
     // Unityインスタンスを作成（進行状況コールバック付き）
-    const instance = await window.createUnityInstance(canvas, config);
+    const instance = await window.createUnityInstance(canvas, config, onProgress ? (progress) => {
+      console.log(`[Unity] Loading progress: ${(progress * 100).toFixed(1)}%`);
+      onProgress(progress);
+    } : undefined);
 
     // グローバルに保存
     window.unityInstance = instance;

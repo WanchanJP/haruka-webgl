@@ -1,0 +1,17 @@
+# VCS / OS
+.git/
+.DS_Store
+Thumbs.db
+
+# ビルド不要物（必要に応じて調整）
+node_modules/
+.cache/
+.next/cache/
+*.log
+# Unity/UE系（もし混在していたら）
+Library/
+Temp/
+Binaries/
+DerivedDataCache/
+Saved/
+Builds/

@@ -36,7 +36,8 @@ declare global {
         companyName: string;
         productName: string;
         productVersion: string;
-      }
+      },
+      onProgress?: (progress: number) => void
     ) => Promise<any>;
 
     /**
@@ -63,6 +64,16 @@ declare global {
       h: number,
       index?: number
     ) => void;
+
+    /**
+     * Unity 側の Bridge が準備完了したかのフラグ
+     */
+    isBridgeReady?: boolean;
+
+    /**
+     * Unity 側から呼ばれる準備完了コールバック
+     */
+    onBridgeReady?: () => void;
   }
 }
 

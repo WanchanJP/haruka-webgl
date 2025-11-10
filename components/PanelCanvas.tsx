@@ -231,11 +231,13 @@ export default function PanelCanvas({
       }
 
       // src を更新（onload は既に設定済み）
-      img.src = `data:image/png;base64,${b64}`;
+      if (img) {
+        img.src = `data:image/png;base64,${b64}`;
+      }
 
       // 📊 メモリ使用量のデバッグ（開発時のみ）
-      if (process.env.NODE_ENV === 'development' && performance.memory) {
-        const memMB = (performance.memory.usedJSHeapSize / 1024 / 1024).toFixed(1);
+      if (process.env.NODE_ENV === 'development' && (performance as any).memory) {
+        const memMB = ((performance as any).memory.usedJSHeapSize / 1024 / 1024).toFixed(1);
         if (Math.random() < 0.1) { // 10% の確率でログ出力（spam 防止）
           console.log(`[PanelCanvas] 💾 Memory: ${memMB} MB (${isNewImage ? 'new' : 'updated'} image)`);
         }
@@ -361,7 +363,11 @@ export default function PanelCanvas({
 
     console.log(
       `[updateVisibleRange] 🎮 Total Unity panels in scene: ${allUnityPanels.length}`,
-      allUnityPanels.map(p => ({ id: p.id, index: p.source?.index, visible: newVisibleIds.has(p.id) }))
+      allUnityPanels.map(p => ({
+        id: p.id,
+        index: p.source?.type === 'unity' ? p.source.index : undefined,
+        visible: newVisibleIds.has(p.id)
+      }))
     );
 
     scene.panels.forEach((p) => {
@@ -480,24 +486,24 @@ export default function PanelCanvas({
       updateVisibleRange();
     }, 100);
 
-    // Unity Bridge 準備完了を待って再度チェック
-    // 1. まず Unity インスタンスの存在をチェック
-    // 2. 次に Bridge が準備完了するまで待つ
+    // Unity インスタンスの準備完了を待つ
+    // (Bridge ready は必須ではない - Unity インスタンスがあれば StartCapture を送信できる)
     let unityCheckAttempts = 0;
-    const maxAttempts = 60; // 最大30秒待つ（500ms × 60）
+    const maxAttempts = 120; // 最大60秒待つ（500ms × 120）
 
     const checkUnityAndBridge = () => {
       const hasUnityInstance = !!(window as any).unityInstance;
       const isBridgeReady = !!(window as any).isBridgeReady;
 
-      if (hasUnityInstance && isBridgeReady) {
-        console.log("[PanelCanvas] ✅ Unity instance AND Bridge ready, running updateVisibleRange");
+      if (hasUnityInstance) {
+        if (isBridgeReady) {
+          console.log("[PanelCanvas] ✅ Unity instance AND Bridge ready, running updateVisibleRange");
+        } else {
+          console.log("[PanelCanvas] ✅ Unity instance ready (Bridge not ready yet, but proceeding anyway)");
+        }
         clearInterval(unityCheckInterval);
         updateVisibleRange();
         return true;
-      } else if (hasUnityInstance && !isBridgeReady) {
-        console.log(`[PanelCanvas] Unity instance ready, waiting for Bridge... (attempt ${unityCheckAttempts}/${maxAttempts})`);
-        return false;
       } else {
         console.log(`[PanelCanvas] Waiting for Unity instance... (attempt ${unityCheckAttempts}/${maxAttempts})`);
         return false;
@@ -509,7 +515,7 @@ export default function PanelCanvas({
       if (checkUnityAndBridge()) {
         // 成功
       } else if (unityCheckAttempts >= maxAttempts) {
-        console.warn("[PanelCanvas] Unity/Bridge check timeout");
+        console.warn("[PanelCanvas] Unity/Bridge check timeout, giving up");
         clearInterval(unityCheckInterval);
       }
     }, 500);

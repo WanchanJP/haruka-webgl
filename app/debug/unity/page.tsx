@@ -41,15 +41,15 @@ export default function DebugUnityPage() {
       try {
         console.log("Starting Unity initialization from /debug/unity...");
 
-        // タイムアウト設定（60秒）
+        // タイムアウト設定（90秒）
         const timeoutPromise = new Promise<never>((_, reject) => {
           setTimeout(() => {
             reject(
               new Error(
-                "Unity initialization timed out after 60 seconds. Check browser console for details."
+                "Unity initialization timed out after 90 seconds. Check browser console for details."
               )
             );
-          }, 60000);
+          }, 90000);
         });
 
         // Unity初期化とタイムアウトを競合させる

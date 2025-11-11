@@ -124,9 +124,22 @@ export function drawPanel(
 
       if (isVisible) {
         const img = options.getUnityImage(source.index);
-        if (img && img.complete) {
-          ctx.drawImage(img, 0, 0, width, height);
+        // Unity画像はBase64 Data URLなので、srcが設定されていれば描画可能
+        // completeチェックを外すことでちらつきを防ぐ
+        if (img && img.src) {
+          try {
+            ctx.drawImage(img, 0, 0, width, height);
+            console.log(`[drawPanel] ✅ Drew Unity image for panel ${panel.id}, index ${source.index}`);
+          } catch (e) {
+            // 画像がまだロードされていない場合はスキップ
+            // 次のフレームで再描画される
+            console.error(`[drawPanel] ❌ Failed to draw Unity image for panel ${panel.id}, index ${source.index}`, e);
+          }
+        } else {
+          console.warn(`[drawPanel] ⚠️ Unity panel ${panel.id} is visible but image[${source.index}] not available (img=${!!img}, src=${!!img?.src})`);
         }
+      } else {
+        console.log(`[drawPanel] ⏭️ Unity panel ${panel.id} index ${source.index} is NOT visible, skipping draw`);
       }
     } else if (source.type === "image" && options.imageCache) {
       const img = options.imageCache.get(source.src);

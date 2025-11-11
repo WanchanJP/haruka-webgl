@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import type { SceneSpec, PanelID, VisibleRange } from "@/lib/layout/panel-types";
 
 // 🕒 ビルドタイムスタンプ（修正時に必ず更新すること）
-const BUILD_TIMESTAMP = "2025-11-11 19:11:00";
+const BUILD_TIMESTAMP = "2025-11-12 00:18:00";
 import {
   setupCanvasForHighDPI,
   drawScene,
@@ -14,6 +14,7 @@ import {
 import {
   getVisibleRangeFromContainer,
   getVisiblePanels,
+  calculateVisibilityRatio,
 } from "@/lib/layout/visibility";
 import { calculateSceneHeight } from "@/lib/layout/panel-sample";
 import { captureManager } from "@/lib/capture/capture-manager";
@@ -52,12 +53,16 @@ export default function PanelCanvas({
   const [needsRedraw, setNeedsRedraw] = useState(true);
   const activeUnityIndexes = useRef<Set<number>>(new Set());
 
-  // 表示スケール（モバイル対応用）
-  // 初期値も計算して設定（SSR対策でtypeof window チェック）
-  const [currentScale, setCurrentScale] = useState(() => {
-    if (typeof window === 'undefined') return 1.0;
-    return Math.min(1, window.innerWidth / scene.viewportWidth);
-  });
+  // 前回の可視パネルIDセットを保持（ヒステリシス用）
+  const previousVisiblePanelIds = useRef<Set<PanelID>>(new Set());
+
+  // Unity停止用のタイマーを管理（ちらつき防止用ディレイ）
+  const unityStopTimers = useRef<Map<number, NodeJS.Timeout>>(new Map());
+
+  // 表示スケール（モバイル対応用）- refで管理して常に最新の値を参照
+  const currentScaleRef = useRef<number>(
+    typeof window === 'undefined' ? 1.0 : Math.min(1, window.innerWidth / scene.viewportWidth)
+  );
 
   // デバッグパネルの表示/非表示（初回レンダリングは常に true、マウント後に localStorage から復元）
   const [showDebugPanel, setShowDebugPanel] = useState(true);
@@ -81,6 +86,46 @@ export default function PanelCanvas({
     sessionStorageKB: 0,
     indexedDBMB: 0,
   });
+
+  // リアルタイムデバッグログ（画面表示用）
+  const [debugLogs, setDebugLogs] = useState<string[]>([]);
+  const debugLogsRef = useRef<string[]>([]);
+
+  const addDebugLog = useCallback((message: string) => {
+    const timestamp = new Date().toLocaleTimeString() + '.' + new Date().getMilliseconds();
+    const logEntry = `[${timestamp}] ${message}`;
+    console.log(logEntry);
+
+    debugLogsRef.current = [...debugLogsRef.current.slice(-19), logEntry]; // 最新20件のみ
+    setDebugLogs(debugLogsRef.current);
+  }, []);
+
+  // スクロール・可視判定のリアルタイム情報
+  const [scrollDebugInfo, setScrollDebugInfo] = useState({
+    scrollTop: 0,
+    scale: 1.0,
+    visibleRangeTop: 0,
+    visibleRangeBottom: 0,
+    panels: [] as Array<{
+      id: string;
+      y: number;
+      height: number;
+      bottom: number;
+      isVisible: boolean;
+      visibilityRatio: number;
+    }>,
+  });
+
+  // 🚨 画像欠落検知（暗くなる瞬間を捉える）
+  const [missingImageAlert, setMissingImageAlert] = useState<{
+    show: boolean;
+    panelId: string;
+    index: number;
+    timestamp: string;
+  } | null>(null);
+
+  // Unity画像更新カウンター（プレビュー再レンダリング用）
+  const [unityImageUpdateCount, setUnityImageUpdateCount] = useState(0);
 
   // マウント後に localStorage から showDebugPanel を復元（Hydration エラー回避）
   useEffect(() => {
@@ -232,17 +277,31 @@ export default function PanelCanvas({
         console.log(`[PanelCanvas] Creating new Image for index ${index}`);
         img = new Image();
         unityImagesRef.current.set(index, img);
-
-        // onload は一度だけ設定（重複を防ぐ）
-        img.onload = () => {
-          console.log(`[PanelCanvas] Unity image loaded for index ${index}, requesting redraw`);
-          setNeedsRedraw(true);
-        };
+        addDebugLog(`🆕 Create img[${index}]`);
       }
 
-      // src を更新（onload は既に設定済み）
+      // src を更新
       if (img) {
         img.src = `data:image/png;base64,${b64}`;
+
+        // 画像が正しく保存されているか確認
+        const stored = unityImagesRef.current.get(index);
+        const storeCheck = stored === img ? "✅" : "❌";
+        addDebugLog(`💾 Store img[${index}] ${storeCheck}`);
+
+        // デバッグパネルのプレビューを更新
+        setUnityImageUpdateCount((prev) => prev + 1);
+
+        // ⚠️ 重要：可視範囲内のUnity画像のみ再描画をトリガー
+        // 範囲外の画像更新で再描画すると、範囲外スクロール中にちらつく
+        const isIndexVisible = activeUnityIndexes.current.has(index);
+
+        if (isIndexVisible) {
+          addDebugLog(`📸 Unity[${index}] → REDRAW`);
+          setNeedsRedraw(true);
+        } else {
+          addDebugLog(`📸 Unity[${index}] → SKIP`);
+        }
       }
 
       // 📊 メモリ使用量のデバッグ（開発時のみ）
@@ -255,8 +314,13 @@ export default function PanelCanvas({
     });
 
     console.log("[PanelCanvas] Unity image listener registered");
-    return () => unsubscribe();
-  }, []);
+    return () => {
+      unsubscribe();
+      // クリーンアップ: すべての停止タイマーをクリア
+      unityStopTimers.current.forEach((timer) => clearTimeout(timer));
+      unityStopTimers.current.clear();
+    };
+  }, [addDebugLog]);
 
   // 画像プリロード
   useEffect(() => {
@@ -283,9 +347,12 @@ export default function PanelCanvas({
   // Unity画像取得関数
   const getUnityImage = useCallback((index: number) => {
     const img = unityImagesRef.current.get(index);
-    console.log(`[getUnityImage] index=${index}, found=${!!img}, complete=${img?.complete}`);
+    const hasSrc = img?.src ? "Y" : "N";
+    const mapSize = unityImagesRef.current.size;
+    console.log(`[getUnityImage] index=${index}, found=${!!img}, src=${hasSrc}, mapSize=${mapSize}`);
+    addDebugLog(`🔍 Get img[${index}]: ${!!img ? "✅" : "❌"}`);
     return img;
-  }, []);
+  }, [addDebugLog]);
 
   // Canvas描画関数
   const drawCanvas = useCallback(() => {
@@ -295,25 +362,37 @@ export default function PanelCanvas({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // シーンの高さを計算
-    const sceneHeight = calculateSceneHeight(scene);
+    // 🔍 デバッグ: 描画タイミングを記録
+    addDebugLog(`🎨 DRAW`);
 
-    // Canvas の実解像度を設定（viewport サイズに合わせる）
-    const rect = canvas.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
+    // 🚨 可視Unityパネルで画像が欠落していないかチェック
+    const visibleUnityPanels = scene.panels.filter(
+      (p) => p.source?.type === "unity" && visiblePanelIds.has(p.id)
+    );
 
-    // Canvas の実解像度を viewport に合わせる（高DPI対応）
-    const displayWidth = rect.width;
-    const displayHeight = rect.height;
+    visibleUnityPanels.forEach((panel) => {
+      if (panel.source?.type === "unity") {
+        const img = unityImagesRef.current.get(panel.source.index);
+        if (!img || !img.src) {
+          // 🚨 可視なのに画像がない！
+          const timestamp = new Date().toLocaleTimeString() + '.' + new Date().getMilliseconds();
+          console.error(`[MISSING IMAGE] Panel ${panel.id} (index ${panel.source.index}) is visible but image is missing!`);
+          addDebugLog(`🚨 MISSING: ${panel.id}[${panel.source.index}]`);
 
-    canvas.width = displayWidth * dpr;
-    canvas.height = displayHeight * dpr;
+          setMissingImageAlert({
+            show: true,
+            panelId: panel.id,
+            index: panel.source.index,
+            timestamp,
+          });
 
-    // Canvas の内容をスケール（座標系を調整）
-    // 重要: 縦横同じスケール比率を使用してアスペクト比を保持
-    ctx.setTransform(1, 0, 0, 1, 0, 0); // リセット
-    const scale = currentScale * dpr;
-    ctx.scale(scale, scale);
+          // 3秒後に警告を消す
+          setTimeout(() => {
+            setMissingImageAlert(null);
+          }, 3000);
+        }
+      }
+    });
 
     // デバッグ: 描画時の可視パネルを確認
     if (debug) {
@@ -336,7 +415,7 @@ export default function PanelCanvas({
     };
 
     drawScene(ctx, scene, options);
-  }, [scene, debug, showMask, imageCache, getUnityImage, visiblePanelIds, currentScale]);
+  }, [scene, debug, showMask, imageCache, getUnityImage, visiblePanelIds, addDebugLog]);
 
   // 可視範囲の更新
   const updateVisibleRange = useCallback(() => {
@@ -346,26 +425,65 @@ export default function PanelCanvas({
       return;
     }
 
+    addDebugLog(`📜 Scroll: ${Math.round(container.scrollTop)}px`);
+
     // スケールを考慮して可視範囲を取得（シーン座標系に変換）
-    const newRange = getVisibleRangeFromContainer(container, currentScale);
+    // refから最新の値を取得することで、スクロール時の判定ずれを防ぐ
+    const newRange = getVisibleRangeFromContainer(container, currentScaleRef.current);
     setVisibleRange(newRange);
 
-    // 可視パネルの計算（80%以上可視で表示）
-    const visible = getVisiblePanels(
-      scene.panels,
-      newRange,
-      scene.viewportWidth,
-      0.8
-    );
+    // 🔍 デバッグ情報を更新（スクロール値と可視判定）
+    const unityPanels = scene.panels.filter((p) => p.source?.type === "unity");
+    const panelDebugInfo = unityPanels.map((p) => {
+      const visibilityRatio = calculateVisibilityRatio(p, newRange, scene.viewportWidth);
+      return {
+        id: p.id,
+        y: p.transform.y,
+        height: p.transform.height,
+        bottom: p.transform.y + p.transform.height,
+        isVisible: visibilityRatio >= 0.5,
+        visibilityRatio: Math.round(visibilityRatio * 100),
+      };
+    });
 
-    const newVisibleIds = new Set(visible.map((p) => p.id));
+    setScrollDebugInfo({
+      scrollTop: Math.round(container.scrollTop),
+      scale: currentScaleRef.current,
+      visibleRangeTop: Math.round(newRange.top),
+      visibleRangeBottom: Math.round(newRange.bottom),
+      panels: panelDebugInfo,
+    });
+
+    // ヒステリシス付き可視パネル判定（ちらつき防止）
+    // - 前回可視だったパネル：10%未満になるまで可視を維持
+    // - 前回非可視だったパネル：50%以上になったら可視にする
+    const newVisibleIds = new Set<PanelID>();
+
+    scene.panels.forEach((panel) => {
+      const wasVisible = previousVisiblePanelIds.current.has(panel.id);
+      const threshold = wasVisible ? 0.1 : 0.5; // ヒステリシス
+
+      const visiblePanels = getVisiblePanels(
+        [panel],
+        newRange,
+        scene.viewportWidth,
+        threshold
+      );
+
+      if (visiblePanels.length > 0) {
+        newVisibleIds.add(panel.id);
+      }
+    });
+
+    // 前回の状態を保存
+    previousVisiblePanelIds.current = newVisibleIds;
 
     console.log(
       `[updateVisibleRange] 📍 Range: ${newRange.top.toFixed(0)}-${newRange.bottom.toFixed(0)}, Visible panels:`,
       Array.from(newVisibleIds)
     );
     console.log(
-      `[updateVisibleRange] 📊 Total panels in scene: ${scene.panels.length}, Visible count: ${visible.length}`
+      `[updateVisibleRange] 📊 Total panels in scene: ${scene.panels.length}, Visible count: ${newVisibleIds.size}`
     );
 
     // Enter/Leaveイベントの発火（前回の状態を参照するためrefを使う）
@@ -414,45 +532,70 @@ export default function PanelCanvas({
       `[updateVisibleRange] 🔄 Previous indexes: [${Array.from(prevIndexes).join(", ")}], New indexes: [${Array.from(newVisibleUnityIndexes).join(", ")}]`
     );
 
-    // 新規に可視になった index → Start
+    // 新規に可視になった index → Start（停止タイマーがあればキャンセル）
     newVisibleUnityIndexes.forEach((index) => {
       if (!prevIndexes.has(index)) {
-        console.log(`[updateVisibleRange] Starting Unity capture for index ${index}`);
-        startUnityCapture(index, 500);
+        // 停止タイマーがあればキャンセル（すぐに戻ってきた場合）
+        const existingTimer = unityStopTimers.current.get(index);
+        if (existingTimer) {
+          console.log(`[updateVisibleRange] ⏸️ Cancelling stop timer for index ${index} (returned to view)`);
+          clearTimeout(existingTimer);
+          unityStopTimers.current.delete(index);
+        } else {
+          console.log(`[updateVisibleRange] ▶️ Starting Unity capture for index ${index}`);
+          startUnityCapture(index, 500);
 
-        // デバッグ情報を更新
-        setDebugInfo((prev) => ({
-          ...prev,
-          lastStartCommand: `index=${index}, ${new Date().toLocaleTimeString()}`,
-        }));
+          // デバッグ情報を更新
+          setDebugInfo((prev) => ({
+            ...prev,
+            lastStartCommand: `index=${index}, ${new Date().toLocaleTimeString()}`,
+          }));
+        }
       }
     });
 
-    // 可視でなくなった index → Stop & メモリ解放
+    // 可視でなくなった index → 500ms後にStop（ちらつき防止）
     prevIndexes.forEach((index) => {
       if (!newVisibleUnityIndexes.has(index)) {
-        console.log(`[updateVisibleRange] Stopping Unity capture for index ${index}`);
-        stopUnityCapture(index);
+        console.log(`[updateVisibleRange] ⏱️ Scheduling stop for Unity capture index ${index} (500ms delay)`);
 
-        // デバッグ情報を更新
-        setDebugInfo((prev) => ({
-          ...prev,
-          lastStopCommand: `index=${index}, ${new Date().toLocaleTimeString()}`,
-        }));
+        // 既存のタイマーをクリア
+        const existingTimer = unityStopTimers.current.get(index);
+        if (existingTimer) {
+          clearTimeout(existingTimer);
+        }
 
-        // 🧹 メモリ最適化：可視範囲外の画像を削除
-        // ただし、すぐに再度可視になる可能性があるため、遅延削除
-        setTimeout(() => {
-          // 5秒後にまだ可視でなければ削除
+        // 500ms後に停止
+        const timer = setTimeout(() => {
+          // タイマー実行時に本当に非可視かを再確認
           if (!activeUnityIndexes.current.has(index)) {
-            const img = unityImagesRef.current.get(index);
-            if (img) {
-              console.log(`[updateVisibleRange] 🧹 Cleaning up image for index ${index}`);
-              img.src = ""; // メモリ解放
-              unityImagesRef.current.delete(index);
-            }
+            console.log(`[updateVisibleRange] ⏹️ Stopping Unity capture for index ${index} (after delay)`);
+            stopUnityCapture(index);
+
+            // デバッグ情報を更新
+            setDebugInfo((prev) => ({
+              ...prev,
+              lastStopCommand: `index=${index}, ${new Date().toLocaleTimeString()}`,
+            }));
+
+            // 🧹 メモリ最適化：可視範囲外の画像を削除
+            setTimeout(() => {
+              // さらに5秒後にまだ可視でなければ削除
+              if (!activeUnityIndexes.current.has(index)) {
+                const img = unityImagesRef.current.get(index);
+                if (img) {
+                  console.log(`[updateVisibleRange] 🧹 Cleaning up image for index ${index}`);
+                  img.src = ""; // メモリ解放
+                  unityImagesRef.current.delete(index);
+                }
+              }
+            }, 5000);
           }
-        }, 5000);
+
+          unityStopTimers.current.delete(index);
+        }, 500);
+
+        unityStopTimers.current.set(index, timer);
       }
     });
 
@@ -489,7 +632,7 @@ export default function PanelCanvas({
     }
 
     setNeedsRedraw(true);
-  }, [scene, onPanelEnter, onPanelLeave, debug, currentScale]);
+  }, [scene, onPanelEnter, onPanelLeave, debug, addDebugLog]);
 
   // Canvas初期化とリサイズ
   useEffect(() => {
@@ -500,10 +643,23 @@ export default function PanelCanvas({
     const sceneHeight = calculateSceneHeight(scene);
 
     const handleResize = () => {
-      const rect = container.getBoundingClientRect();
+      // スケールを計算して保存
+      const viewportWidth = window.innerWidth;
+      const scale = Math.min(1, viewportWidth / scene.viewportWidth);
+      currentScaleRef.current = scale;
+
+      // Canvas初期化（高DPI対応）
       const ctx = setupCanvasForHighDPI(canvas, scene.viewportWidth, sceneHeight);
       if (ctx) {
+        // CSSスタイルでの表示サイズも更新
+        setCanvasStyle({
+          width: scene.viewportWidth * scale,
+          height: sceneHeight * scale,
+        });
+
         setNeedsRedraw(true);
+        // スケールが変わったので可視範囲も再計算
+        updateVisibleRange();
       }
     };
 
@@ -520,7 +676,7 @@ export default function PanelCanvas({
     // Unity インスタンスの準備完了を待つ
     // (Bridge ready は必須ではない - Unity インスタンスがあれば StartCapture を送信できる)
     let unityCheckAttempts = 0;
-    const maxAttempts = 120; // 最大60秒待つ（500ms × 120）
+    const maxAttempts = 360; // 最大180秒(3分)待つ（500ms × 360）
 
     const checkUnityAndBridge = () => {
       const hasUnityInstance = !!(window as any).unityInstance;
@@ -572,8 +728,10 @@ export default function PanelCanvas({
     window.addEventListener("unity-bridge-ready", handleBridgeReady);
 
     window.addEventListener("resize", handleResize);
+    window.addEventListener("orientationchange", handleResize);
     return () => {
       window.removeEventListener("resize", handleResize);
+      window.removeEventListener("orientationchange", handleResize);
       window.removeEventListener("unity-bridge-ready", handleBridgeReady);
       clearTimeout(initialCheckTimer);
       clearInterval(unityCheckInterval);
@@ -638,33 +796,6 @@ export default function PanelCanvas({
     height: sceneHeight,
   });
 
-  useEffect(() => {
-    const updateCanvasSize = () => {
-      const viewportWidth = window.innerWidth;
-      const scale = Math.min(1, viewportWidth / scene.viewportWidth);
-
-      setCanvasStyle({
-        width: scene.viewportWidth * scale,
-        height: sceneHeight * scale,
-      });
-
-      // スケールを保存（可視範囲計算に使用）
-      setCurrentScale(scale);
-
-      // リサイズ後に再描画
-      setNeedsRedraw(true);
-    };
-
-    updateCanvasSize();
-    window.addEventListener('resize', updateCanvasSize);
-    window.addEventListener('orientationchange', updateCanvasSize);
-
-    return () => {
-      window.removeEventListener('resize', updateCanvasSize);
-      window.removeEventListener('orientationchange', updateCanvasSize);
-    };
-  }, [scene.viewportWidth, sceneHeight]);
-
   return (
     <div
       ref={containerRef}
@@ -706,38 +837,66 @@ export default function PanelCanvas({
         🕒 {BUILD_TIMESTAMP}
       </div>
 
-      {/* デバッグ表示切り替えボタン（モバイル対応） */}
-      {process.env.NODE_ENV === "development" && (
-        <button
-          onClick={() => {
-            const newValue = !showDebugPanel;
-            setShowDebugPanel(newValue);
-            localStorage.setItem('showDebugPanel', String(newValue));
-          }}
+      {/* 🚨 画像欠落インジケーター（控えめに右下に表示） */}
+      {missingImageAlert?.show && (
+        <div
           style={{
             position: "fixed",
-            top: "60px",
+            bottom: "50px",
             right: "10px",
-            background: showDebugPanel ? "rgba(76, 175, 80, 0.9)" : "rgba(158, 158, 158, 0.9)",
+            background: "rgba(255, 100, 100, 0.9)",
             color: "white",
-            border: "2px solid white",
-            borderRadius: "6px",
             padding: "8px 12px",
-            fontSize: "14px",
-            fontWeight: "bold",
-            cursor: "pointer",
-            zIndex: 10001,
-            boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
-            transition: "all 0.2s ease",
+            borderRadius: "6px",
+            fontSize: "11px",
+            fontFamily: "monospace",
+            zIndex: 9999,
+            boxShadow: "0 2px 8px rgba(255, 0, 0, 0.5)",
+            border: "2px solid #ff6666",
           }}
-          title="デバッグ表示の切り替え (U キーでも可)"
         >
-          🔍 Debug {showDebugPanel ? "ON" : "OFF"}
-        </button>
+          <div style={{ fontWeight: "bold", marginBottom: "4px" }}>
+            ⚠️ Image Missing
+          </div>
+          <div style={{ fontSize: "10px", opacity: 0.9 }}>
+            {missingImageAlert.panelId}[{missingImageAlert.index}]
+          </div>
+          <div style={{ fontSize: "9px", opacity: 0.7, marginTop: "2px" }}>
+            {missingImageAlert.timestamp}
+          </div>
+        </div>
       )}
 
-      {/* デバッグオーバーレイ（開発時のみ表示、U キーで切り替え） */}
-      {process.env.NODE_ENV === "development" && showDebugPanel && (
+      {/* デバッグ表示切り替えボタン（モバイル対応） */}
+      <button
+        onClick={() => {
+          const newValue = !showDebugPanel;
+          setShowDebugPanel(newValue);
+          localStorage.setItem('showDebugPanel', String(newValue));
+        }}
+        style={{
+          position: "fixed",
+          top: "60px",
+          right: "10px",
+          background: showDebugPanel ? "rgba(76, 175, 80, 0.9)" : "rgba(158, 158, 158, 0.9)",
+          color: "white",
+          border: "2px solid white",
+          borderRadius: "6px",
+          padding: "8px 12px",
+          fontSize: "14px",
+          fontWeight: "bold",
+          cursor: "pointer",
+          zIndex: 10001,
+          boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+          transition: "all 0.2s ease",
+        }}
+        title="デバッグ表示の切り替え (U キーでも可)"
+      >
+        🔍 Debug {showDebugPanel ? "ON" : "OFF"}
+      </button>
+
+      {/* デバッグオーバーレイ（U キーまたはボタンで切り替え） */}
+      {showDebugPanel && (
         <div
           style={{
             position: "fixed",
@@ -768,6 +927,134 @@ export default function PanelCanvas({
             fontSize: "10px"
           }}>
             🕒 Build: {BUILD_TIMESTAMP}
+          </div>
+
+          {/* 画像欠落履歴（デバッグパネル内） */}
+          {missingImageAlert?.show && (
+            <div style={{
+              background: "#ff6666",
+              padding: "8px",
+              borderRadius: "4px",
+              marginBottom: "8px",
+              border: "2px solid #fff",
+            }}>
+              <div style={{ fontWeight: "bold", marginBottom: "4px", fontSize: "11px", color: "#fff" }}>
+                ⚠️ Image Missing Detected!
+              </div>
+              <div style={{ fontSize: "10px", color: "#fff" }}>
+                Panel: {missingImageAlert.panelId}
+              </div>
+              <div style={{ fontSize: "10px", color: "#fff" }}>
+                Index: {missingImageAlert.index}
+              </div>
+              <div style={{ fontSize: "9px", color: "#fff", opacity: 0.8, marginTop: "4px" }}>
+                {missingImageAlert.timestamp}
+              </div>
+            </div>
+          )}
+
+          {/* Unity画像プレビュー */}
+          <div style={{
+            background: "#1a1a1a",
+            padding: "8px",
+            borderRadius: "4px",
+            marginBottom: "8px",
+            border: "2px solid #0ff",
+          }}>
+            <div style={{ fontWeight: "bold", marginBottom: "6px", fontSize: "12px", color: "#0ff" }}>
+              🖼️ Unity Textures
+            </div>
+            {[0, 1, 2].map((index) => {
+              const img = unityImagesRef.current.get(index);
+              const hasImage = !!img && !!img.src;
+              const isActive = activeUnityIndexes.current.has(index);
+
+              return (
+                <div key={index} style={{
+                  marginBottom: "8px",
+                  padding: "6px",
+                  background: isActive ? "rgba(0, 255, 0, 0.1)" : "rgba(100, 100, 100, 0.1)",
+                  borderRadius: "4px",
+                  border: `2px solid ${isActive ? "#0f0" : "#666"}`,
+                }}>
+                  <div style={{ fontSize: "10px", marginBottom: "4px", fontWeight: "bold", color: isActive ? "#0f0" : "#999" }}>
+                    Index {index} {isActive ? "🟢 ACTIVE" : "⚫ INACTIVE"}
+                  </div>
+                  {hasImage ? (
+                    <img
+                      src={img.src}
+                      alt={`Unity texture ${index}`}
+                      style={{
+                        width: "100%",
+                        height: "auto",
+                        borderRadius: "4px",
+                        border: "1px solid #666",
+                        display: "block",
+                      }}
+                    />
+                  ) : (
+                    <div style={{
+                      width: "100%",
+                      height: "60px",
+                      background: "#000",
+                      borderRadius: "4px",
+                      border: "1px solid #666",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "#666",
+                      fontSize: "10px",
+                    }}>
+                      No Image
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* スクロール・可視判定情報 */}
+          <div style={{
+            background: "#1a1a1a",
+            padding: "8px",
+            borderRadius: "4px",
+            marginBottom: "8px",
+            border: "2px solid #ff0",
+          }}>
+            <div style={{ fontWeight: "bold", marginBottom: "6px", fontSize: "12px", color: "#ff0" }}>
+              📊 Scroll & Visibility
+            </div>
+
+            <div style={{ fontSize: "10px", marginBottom: "4px" }}>
+              Raw ScrollTop: <span style={{ color: "#0ff", fontWeight: "bold" }}>{scrollDebugInfo.scrollTop}px</span>
+            </div>
+            <div style={{ fontSize: "10px", marginBottom: "4px" }}>
+              Scale: <span style={{ color: "#0ff", fontWeight: "bold" }}>{scrollDebugInfo.scale.toFixed(3)}</span>
+            </div>
+            <div style={{ fontSize: "10px", marginBottom: "8px", paddingBottom: "4px", borderBottom: "1px dashed #444" }}>
+              Visible Range: <span style={{ color: "#0f0", fontWeight: "bold" }}>{scrollDebugInfo.visibleRangeTop} ~ {scrollDebugInfo.visibleRangeBottom}</span>
+            </div>
+
+            {scrollDebugInfo.panels.map((panel, idx) => (
+              <div key={panel.id} style={{
+                fontSize: "9px",
+                marginBottom: "4px",
+                padding: "4px",
+                background: panel.isVisible ? "rgba(0, 255, 0, 0.1)" : "rgba(255, 0, 0, 0.1)",
+                borderLeft: `3px solid ${panel.isVisible ? "#0f0" : "#f00"}`,
+                paddingLeft: "6px",
+              }}>
+                <div style={{ fontWeight: "bold", marginBottom: "2px" }}>
+                  {panel.id} {panel.isVisible ? "✅" : "❌"}
+                </div>
+                <div style={{ color: "#ccc" }}>
+                  Y: {panel.y} ~ {panel.bottom} (H: {panel.height})
+                </div>
+                <div style={{ color: panel.isVisible ? "#0f0" : "#f00" }}>
+                  Visibility: {panel.visibilityRatio}%
+                </div>
+              </div>
+            ))}
           </div>
 
           <div style={{ display: "grid", gap: "4px" }}>
@@ -874,6 +1161,33 @@ export default function PanelCanvas({
 
             <div style={{ borderTop: "1px solid #444", paddingTop: "4px", marginTop: "4px", fontSize: "10px", color: "#888", textAlign: "center" }}>
               Press [U] or tap button to toggle
+            </div>
+
+            {/* リアルタイムログ表示 */}
+            <div style={{ borderTop: "1px solid #444", paddingTop: "8px", marginTop: "8px" }}>
+              <div style={{ fontWeight: "bold", marginBottom: "4px", fontSize: "11px", color: "#0ff" }}>
+                📋 Real-time Logs (last 20)
+              </div>
+              <div style={{
+                background: "#0a0a0a",
+                padding: "4px",
+                borderRadius: "4px",
+                fontSize: "9px",
+                maxHeight: "150px",
+                overflow: "auto",
+                fontFamily: "monospace",
+                lineHeight: "1.3",
+              }}>
+                {debugLogs.length === 0 ? (
+                  <div style={{ color: "#666" }}>No logs yet...</div>
+                ) : (
+                  debugLogs.map((log, i) => (
+                    <div key={i} style={{ color: "#0f0" }}>
+                      {log}
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           </div>
         </div>

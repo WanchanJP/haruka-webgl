@@ -19,6 +19,8 @@ interface UnityConfig {
   companyName: string;
   productName: string;
   productVersion: string;
+  matchWebGLToCanvasSize?: boolean;
+  devicePixelRatio?: number;
 }
 
 // ========================================
@@ -52,7 +54,8 @@ export async function loadUnity(
   onProgress?: (progress: number) => void
 ): Promise<void> {
   try {
-    console.log("[Unity] Starting Unity initialization...");
+    console.log("[Unity] ========== Starting Unity initialization ==========");
+    console.log("[Unity] Timestamp:", new Date().toISOString());
 
     // キャンバス要素を取得
     const canvas = document.getElementById("unity-canvas") as HTMLCanvasElement;
@@ -61,13 +64,21 @@ export async function loadUnity(
         'Canvas element with id "unity-canvas" not found in the DOM'
       );
     }
-    console.log("[Unity] Canvas element found:", canvas);
+    console.log("[Unity] Canvas element found:", {
+      id: canvas.id,
+      width: canvas.width,
+      height: canvas.height,
+      styleWidth: canvas.style.width,
+      styleHeight: canvas.style.height,
+    });
 
     // Unityローダースクリプトを読み込む
     const loaderUrl = `${BUILD_BASE}.loader.js`;
     console.log(`[Unity] Loading Unity loader from: ${loaderUrl}`);
+    const loaderStartTime = Date.now();
     await loadScript(loaderUrl);
-    console.log("[Unity] Loader script loaded successfully");
+    const loaderLoadTime = Date.now() - loaderStartTime;
+    console.log(`[Unity] Loader script loaded successfully in ${loaderLoadTime}ms`);
 
     // createUnityInstance関数が読み込まれたか確認
     if (typeof window.createUnityInstance !== "function") {
@@ -86,9 +97,15 @@ export async function loadUnity(
       companyName: "DefaultCompany",
       productName: "Haruka WebGL",
       productVersion: "0.3.0",
+      matchWebGLToCanvasSize: false, // Canvas サイズを固定
+      devicePixelRatio: 1, // DPR を固定してパフォーマンス向上
     };
 
     console.log("[Unity] Creating Unity instance with config:", config);
+    console.log("[Unity] File sizes (approximate):");
+    console.log(`  - ${config.dataUrl} (data file)`);
+    console.log(`  - ${config.codeUrl} (wasm file)`);
+    console.log(`  - ${config.frameworkUrl} (framework)`);
     console.log("[Unity] This may take a while for large builds...");
 
     if (onProgress) {
@@ -96,19 +113,53 @@ export async function loadUnity(
     }
 
     // Unityインスタンスを作成（進行状況コールバック付き）
-    const instance = await window.createUnityInstance(canvas, config, onProgress ? (progress) => {
-      console.log(`[Unity] Loading progress: ${(progress * 100).toFixed(1)}%`);
-      onProgress(progress);
-    } : undefined);
+    const instanceStartTime = Date.now();
+    let lastProgressTime = instanceStartTime;
+    let lastProgress = 0;
+
+    const instance = await window.createUnityInstance(
+      canvas,
+      config,
+      onProgress
+        ? (progress) => {
+            const now = Date.now();
+            const timeSinceLastProgress = now - lastProgressTime;
+            const progressDelta = progress - lastProgress;
+            const progressPercent = (progress * 100).toFixed(1);
+
+            console.log(
+              `[Unity] Progress: ${progressPercent}% (+${(progressDelta * 100).toFixed(1)}% in ${timeSinceLastProgress}ms)`
+            );
+
+            lastProgressTime = now;
+            lastProgress = progress;
+            onProgress(progress);
+          }
+        : undefined
+    );
+
+    const totalLoadTime = Date.now() - instanceStartTime;
+    console.log(`[Unity] Instance creation took ${(totalLoadTime / 1000).toFixed(2)}s`);
 
     // グローバルに保存
     window.unityInstance = instance;
 
     console.log("[Unity] ✅ Unity instance created successfully!");
+    console.log("[Unity] Instance object:", instance);
+    console.log("[Unity] Has SendMessage:", typeof instance.SendMessage === "function");
+    console.log("[Unity] ========== Unity initialization complete ==========");
   } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-    console.error("[Unity] ❌ Failed to load Unity:", error);
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    const errorStack = error instanceof Error ? error.stack : undefined;
+
+    console.error("[Unity] ❌ Failed to load Unity");
+    console.error("[Unity] Error message:", errorMessage);
+    if (errorStack) {
+      console.error("[Unity] Error stack:", errorStack);
+    }
+    console.error("[Unity] Error object:", error);
+    console.error("[Unity] ========== Unity initialization failed ==========");
+
     throw new Error(`Unity load failed: ${errorMessage}`);
   }
 }

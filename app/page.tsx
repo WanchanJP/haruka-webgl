@@ -62,7 +62,12 @@ export default function Home() {
       if (!container) return;
 
       setScrollTop(container.scrollTop);
-      const range = getVisibleRangeFromContainer(container);
+
+      // スケールを計算（PanelCanvasと同じロジック）
+      const viewportWidth = window.innerWidth;
+      const scale = Math.min(1, viewportWidth / sampleScene.viewportWidth);
+
+      const range = getVisibleRangeFromContainer(container, scale);
       setVisibleRange(range);
     };
 
@@ -72,10 +77,16 @@ export default function Home() {
       updateScrollInfo(); // Initial update
     }
 
+    // リサイズ時にもスケールが変わるので更新
+    window.addEventListener("resize", updateScrollInfo);
+    window.addEventListener("orientationchange", updateScrollInfo);
+
     return () => {
       if (container) {
         container.removeEventListener("scroll", updateScrollInfo);
       }
+      window.removeEventListener("resize", updateScrollInfo);
+      window.removeEventListener("orientationchange", updateScrollInfo);
     };
   }, []);
 
@@ -100,28 +111,45 @@ export default function Home() {
           justifyContent: "space-between",
           alignItems: "center",
         }}
+        className="app-header"
       >
         <h1 style={{ margin: 0, fontSize: "18px", fontWeight: "600" }}>
           Haruka WebGL - Panel Layout
         </h1>
-        <Link
-          href="/debug/unity"
-          style={{
-            padding: "6px 12px",
-            background: "#667eea",
-            color: "white",
-            borderRadius: "4px",
-            textDecoration: "none",
-            fontSize: "14px",
-            fontWeight: "500",
-          }}
-        >
-          🔧 Unity Debug
-        </Link>
+        <div style={{ display: "flex", gap: "8px" }}>
+          <Link
+            href="/debug/unity"
+            style={{
+              padding: "6px 12px",
+              background: "#667eea",
+              color: "white",
+              borderRadius: "4px",
+              textDecoration: "none",
+              fontSize: "14px",
+              fontWeight: "500",
+            }}
+          >
+            🔧 Unity Debug
+          </Link>
+          <Link
+            href="/debug/unity-minimal"
+            style={{
+              padding: "6px 12px",
+              background: "#FF9800",
+              color: "white",
+              borderRadius: "4px",
+              textDecoration: "none",
+              fontSize: "14px",
+              fontWeight: "500",
+            }}
+          >
+            🔬 Minimal
+          </Link>
+        </div>
       </header>
 
       {/* Main panel canvas */}
-      <main style={{ marginTop: "48px" }}>
+      <main style={{ marginTop: "0" }} className="app-main">
         <PanelCanvas
           scene={sampleScene}
           onPanelEnter={handlePanelEnter}

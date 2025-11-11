@@ -2,6 +2,9 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { SceneSpec, PanelID, VisibleRange } from "@/lib/layout/panel-types";
+
+// 🕒 ビルドタイムスタンプ（修正時に必ず更新すること）
+const BUILD_TIMESTAMP = "2025-11-11 19:11:00";
 import {
   setupCanvasForHighDPI,
   drawScene,
@@ -48,6 +51,13 @@ export default function PanelCanvas({
   );
   const [needsRedraw, setNeedsRedraw] = useState(true);
   const activeUnityIndexes = useRef<Set<number>>(new Set());
+
+  // 表示スケール（モバイル対応用）
+  // 初期値も計算して設定（SSR対策でtypeof window チェック）
+  const [currentScale, setCurrentScale] = useState(() => {
+    if (typeof window === 'undefined') return 1.0;
+    return Math.min(1, window.innerWidth / scene.viewportWidth);
+  });
 
   // デバッグパネルの表示/非表示（初回レンダリングは常に true、マウント後に localStorage から復元）
   const [showDebugPanel, setShowDebugPanel] = useState(true);
@@ -285,6 +295,26 @@ export default function PanelCanvas({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
+    // シーンの高さを計算
+    const sceneHeight = calculateSceneHeight(scene);
+
+    // Canvas の実解像度を設定（viewport サイズに合わせる）
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+
+    // Canvas の実解像度を viewport に合わせる（高DPI対応）
+    const displayWidth = rect.width;
+    const displayHeight = rect.height;
+
+    canvas.width = displayWidth * dpr;
+    canvas.height = displayHeight * dpr;
+
+    // Canvas の内容をスケール（座標系を調整）
+    // 重要: 縦横同じスケール比率を使用してアスペクト比を保持
+    ctx.setTransform(1, 0, 0, 1, 0, 0); // リセット
+    const scale = currentScale * dpr;
+    ctx.scale(scale, scale);
+
     // デバッグ: 描画時の可視パネルを確認
     if (debug) {
       const unityPanels = scene.panels.filter((p) => p.source?.type === "unity");
@@ -306,7 +336,7 @@ export default function PanelCanvas({
     };
 
     drawScene(ctx, scene, options);
-  }, [scene, debug, showMask, imageCache, getUnityImage, visiblePanelIds]);
+  }, [scene, debug, showMask, imageCache, getUnityImage, visiblePanelIds, currentScale]);
 
   // 可視範囲の更新
   const updateVisibleRange = useCallback(() => {
@@ -316,7 +346,8 @@ export default function PanelCanvas({
       return;
     }
 
-    const newRange = getVisibleRangeFromContainer(container);
+    // スケールを考慮して可視範囲を取得（シーン座標系に変換）
+    const newRange = getVisibleRangeFromContainer(container, currentScale);
     setVisibleRange(newRange);
 
     // 可視パネルの計算（80%以上可視で表示）
@@ -458,7 +489,7 @@ export default function PanelCanvas({
     }
 
     setNeedsRedraw(true);
-  }, [scene, onPanelEnter, onPanelLeave, debug]);
+  }, [scene, onPanelEnter, onPanelLeave, debug, currentScale]);
 
   // Canvas初期化とリサイズ
   useEffect(() => {
@@ -601,6 +632,39 @@ export default function PanelCanvas({
 
   const sceneHeight = calculateSceneHeight(scene);
 
+  // viewport に合わせた実際の表示サイズを計算
+  const [canvasStyle, setCanvasStyle] = useState({
+    width: scene.viewportWidth,
+    height: sceneHeight,
+  });
+
+  useEffect(() => {
+    const updateCanvasSize = () => {
+      const viewportWidth = window.innerWidth;
+      const scale = Math.min(1, viewportWidth / scene.viewportWidth);
+
+      setCanvasStyle({
+        width: scene.viewportWidth * scale,
+        height: sceneHeight * scale,
+      });
+
+      // スケールを保存（可視範囲計算に使用）
+      setCurrentScale(scale);
+
+      // リサイズ後に再描画
+      setNeedsRedraw(true);
+    };
+
+    updateCanvasSize();
+    window.addEventListener('resize', updateCanvasSize);
+    window.addEventListener('orientationchange', updateCanvasSize);
+
+    return () => {
+      window.removeEventListener('resize', updateCanvasSize);
+      window.removeEventListener('orientationchange', updateCanvasSize);
+    };
+  }, [scene.viewportWidth, sceneHeight]);
+
   return (
     <div
       ref={containerRef}
@@ -616,11 +680,61 @@ export default function PanelCanvas({
         className="panel-canvas"
         style={{
           display: "block",
-          width: `${scene.viewportWidth}px`,
-          height: `${sceneHeight}px`,
+          width: `${canvasStyle.width}px`,
+          height: `${canvasStyle.height}px`,
           margin: "0 auto",
         }}
       />
+
+      {/* ビルドタイムスタンプバッジ（常に表示） */}
+      <div
+        style={{
+          position: "fixed",
+          bottom: "10px",
+          right: "10px",
+          background: "rgba(0, 0, 0, 0.7)",
+          color: "#0ff",
+          padding: "4px 8px",
+          borderRadius: "4px",
+          fontSize: "10px",
+          fontFamily: "monospace",
+          zIndex: 9998,
+          pointerEvents: "none",
+          opacity: 0.6,
+        }}
+      >
+        🕒 {BUILD_TIMESTAMP}
+      </div>
+
+      {/* デバッグ表示切り替えボタン（モバイル対応） */}
+      {process.env.NODE_ENV === "development" && (
+        <button
+          onClick={() => {
+            const newValue = !showDebugPanel;
+            setShowDebugPanel(newValue);
+            localStorage.setItem('showDebugPanel', String(newValue));
+          }}
+          style={{
+            position: "fixed",
+            top: "60px",
+            right: "10px",
+            background: showDebugPanel ? "rgba(76, 175, 80, 0.9)" : "rgba(158, 158, 158, 0.9)",
+            color: "white",
+            border: "2px solid white",
+            borderRadius: "6px",
+            padding: "8px 12px",
+            fontSize: "14px",
+            fontWeight: "bold",
+            cursor: "pointer",
+            zIndex: 10001,
+            boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+            transition: "all 0.2s ease",
+          }}
+          title="デバッグ表示の切り替え (U キーでも可)"
+        >
+          🔍 Debug {showDebugPanel ? "ON" : "OFF"}
+        </button>
+      )}
 
       {/* デバッグオーバーレイ（開発時のみ表示、U キーで切り替え） */}
       {process.env.NODE_ENV === "development" && showDebugPanel && (
@@ -643,6 +757,17 @@ export default function PanelCanvas({
         >
           <div style={{ fontWeight: "bold", marginBottom: "8px", fontSize: "12px" }}>
             🔍 Unity Capture Debug
+          </div>
+
+          {/* ビルドタイムスタンプ表示 */}
+          <div style={{
+            borderBottom: "1px solid #444",
+            paddingBottom: "6px",
+            marginBottom: "6px",
+            color: "#0ff",
+            fontSize: "10px"
+          }}>
+            🕒 Build: {BUILD_TIMESTAMP}
           </div>
 
           <div style={{ display: "grid", gap: "4px" }}>
@@ -748,7 +873,7 @@ export default function PanelCanvas({
             </div>
 
             <div style={{ borderTop: "1px solid #444", paddingTop: "4px", marginTop: "4px", fontSize: "10px", color: "#888", textAlign: "center" }}>
-              Press [U] to toggle debug
+              Press [U] or tap button to toggle
             </div>
           </div>
         </div>

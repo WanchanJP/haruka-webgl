@@ -111,13 +111,17 @@ export function createPanelObserver(
 
 /**
  * スクロールコンテナから可視範囲を取得
+ * @param container スクロールコンテナ要素
+ * @param scale 表示スケール（モバイル対応用）。省略時は1.0
  */
 export function getVisibleRangeFromContainer(
-  container: HTMLElement
+  container: HTMLElement,
+  scale: number = 1.0
 ): VisibleRange {
+  // スケールで割ることで、スクロール位置をシーン座標系に変換
   return {
-    top: container.scrollTop,
-    bottom: container.scrollTop + container.clientHeight,
+    top: container.scrollTop / scale,
+    bottom: (container.scrollTop + container.clientHeight) / scale,
   };
 }
 

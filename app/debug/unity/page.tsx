@@ -151,6 +151,21 @@ export default function DebugUnityPage() {
         >
           ← ホームに戻る
         </Link>
+        <Link
+          href="/debug/unity-minimal"
+          style={{
+            display: "inline-block",
+            padding: "0.5rem 1rem",
+            background: "#FF9800",
+            color: "white",
+            borderRadius: "4px",
+            textDecoration: "none",
+            fontSize: "0.875rem",
+            fontWeight: "500",
+          }}
+        >
+          🔬 Minimal Debug
+        </Link>
       </div>
 
       <h1>Unity WebGL Debug Page</h1>
@@ -179,11 +194,13 @@ export default function DebugUnityPage() {
           {/* Unity実キャンバス */}
           <canvas
             id="unity-canvas"
+            tabIndex={0}
             className="unity-canvas"
             style={{
               width: "640px",
               height: "480px",
               display: "block",
+              outline: "none",
             }}
           />
           <p className="unity-hint">

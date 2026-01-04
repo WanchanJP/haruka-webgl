@@ -1,65 +1,62 @@
-# Claude Code \m:�
+# Claude Code メモ
 
-Sn������g Claude Code L����c�LF�ńj:��~h�_ɭ����gY
+このファイルは Claude Code を使った作業時に参照する指示書です。
 
-## �\m�
+## 運用ルール
 
-### 1. ��ɿ�๿��n��
+### 1. タイムスタンプの更新
 
-**́: ����cBko�Z��๿�ג��WfO`UD**
+**重要: 修正を加えたら必ずタイムスタンプを更新してください**
 
-�馶��÷�nOL��gM��FkY�_�`components/PanelCanvas.tsx` nH-kB���ɿ�๿�ג��W~Y
+毎回の修正時には、コンポーネントのタイムスタンプを更新してください。例えば `components/PanelCanvas.tsx` の冒頭にあるタイムスタンプを更新します。
 
-#### �aա��
+#### 対象ファイル
 - `components/PanelCanvas.tsx`
 
-#### ���@
+#### 書式例
 ```typescript
-// =R ��ɿ�๿���cBk�Z��Y�Sh	
+// ビルド時刻を記録してブラウザキャッシュ問題を解消
 const BUILD_TIMESTAMP = "YYYY-MM-DD HH:MM:SS";
 ```
 
-#### ������
-- `components/PanelCanvas.tsx` ��cW_hM
-- `lib/layout/` Mnա���cW_hM
-- `lib/unity.ts` � Unity �#nա���cW_hM
-- �����n�\kq�Y��c�Lc_hM
+#### 更新時の注意
+- `components/PanelCanvas.tsx` を修正時に更新
+- `lib/layout/` 配下の関連ファイルを修正時に更新
+- `lib/unity.ts` や Unity 関連の設定を修正時に更新
+- その他、描画に影響を与える重要な修正を行った時に更新
 
-#### ����
-�(n�B� `YYYY-MM-DD HH:MM:SS` bgeWfO`UD
-�: `"2025-11-11 15:30:00"`
+#### 形式
+タイムスタンプは `YYYY-MM-DD HH:MM:SS` 形式で記載してください。
+例: `"2025-11-11 15:30:00"`
 
-**�c�:**
+**悪い例:**
 ```typescript
-// �cM
+// 悪い例
 const BUILD_TIMESTAMP = "2025-11-11 15:30:00";
 
-// �c�2025t1111� 16:45:00 k�cW_4	
+// 修正を加えた 2025年11月11日 16:45:00 に修正時刻を更新
 const BUILD_TIMESTAMP = "2025-11-11 16:45:00";
 ```
 
-### 2. ��๿��n����
+### 2. タイムスタンプの確認方法
 
-����o�n��g��๿�ג��gM~Y
-- �z���g�����k����
-- ;b�
-n= Debugܿ��ïWf��ðh:���
-- ��ð�����n
-�k=R Build: YYYY-MM-DD HH:MM:SShh:U��
+コード内では最新のタイムスタンプを記録しています。
+- 本番環境ではデバッグ情報に含まれない
+- 開発中は Debug オーバーレイで確認可能: 右下に「Build: YYYY-MM-DD HH:MM:SS」と表示される
 
-### 3. ]n�n��
+### 3. その他の注意事項
 
-- ��๿��o��L��YDbg	
-- �XM~g	Y�Shg0KD�c�����
-- pա���cW_4g�1�n\mhWfX��๿��gOK
+- タイムスタンプは最終更新日時を記載する
+- 軽微な修正でも更新する（キャッシュ問題を避けるため）
+- 他のファイルを修正した場合でも、主要な描画ロジックに影響がある場合はタイムスタンプを更新
 
-## \m���
+## 作業フロー
 
-1. ����c���
-2. `BUILD_TIMESTAMP` ��(B;k��
-3. �c�������k1JY����๿�ג��W_Sh�H�
+1. コードを修正
+2. `BUILD_TIMESTAMP` を現在時刻に更新
+3. 修正内容をコミット前に確認し、タイムスタンプが更新されていることを確認
 
 ---
 
-**Snա��o Claude Code n\m:hWf(U�~Y**
-**������k Y��z��gWfO`UD**
+**この指示書は Claude Code の作業時に使用します。**
+**必要に応じて運用ルールを追加してください。**

@@ -10,7 +10,7 @@ import type { PanelID, VisibleRange } from "@/lib/layout/panel-types";
 import { getVisibleRangeFromContainer } from "@/lib/layout/visibility";
 import "@/styles/panel.css";
 
-export default function Home() {
+export default function DevPage() {
   const [debug, setDebug] = useState(false);
   const [showMask, setShowMask] = useState(false);
   const [visiblePanelIds, setVisiblePanelIds] = useState<PanelID[]>([]);
@@ -103,8 +103,8 @@ export default function Home() {
           left: 0,
           right: 0,
           zIndex: 9999,
-          background: "rgba(255, 255, 255, 0.95)",
-          borderBottom: "1px solid #ddd",
+          background: "rgba(255, 220, 100, 0.95)",
+          borderBottom: "2px solid #ff9800",
           padding: "8px 16px",
           backdropFilter: "blur(8px)",
           display: "flex",
@@ -113,15 +113,31 @@ export default function Home() {
         }}
         className="app-header"
       >
-        <h1 style={{ margin: 0, fontSize: "18px", fontWeight: "600" }}>
-          Haruka WebGL - Panel Layout (安定版)
-        </h1>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          <h1 style={{ margin: 0, fontSize: "18px", fontWeight: "600" }}>
+            🚧 Development Version
+          </h1>
+          <Link
+            href="/"
+            style={{
+              padding: "4px 8px",
+              background: "#4CAF50",
+              color: "white",
+              borderRadius: "4px",
+              textDecoration: "none",
+              fontSize: "12px",
+              fontWeight: "500",
+            }}
+          >
+            ← Trunk (安定版)
+          </Link>
+        </div>
         <div style={{ display: "flex", gap: "8px" }}>
           <Link
-            href="/dev"
+            href="/dev/episode1"
             style={{
               padding: "6px 12px",
-              background: "#FF9800",
+              background: "#4CAF50",
               color: "white",
               borderRadius: "4px",
               textDecoration: "none",
@@ -129,7 +145,7 @@ export default function Home() {
               fontWeight: "500",
             }}
           >
-            🚧 Dev
+            📖 Episode 1
           </Link>
           <Link
             href="/debug/unity"

@@ -199,9 +199,9 @@ export default function UnityMinimalDebugPage() {
 
         // Unity設定
         const config: UnityConfig = {
-          dataUrl: `${BUILD_BASE}.data`,
-          frameworkUrl: `${BUILD_BASE}.framework.js`,
-          codeUrl: `${BUILD_BASE}.wasm`,
+          dataUrl: `${BUILD_BASE}.data.gz`,
+          frameworkUrl: `${BUILD_BASE}.framework.js.gz`,
+          codeUrl: `${BUILD_BASE}.wasm.gz`,
           streamingAssetsUrl: "StreamingAssets",
           companyName: "DefaultCompany",
           productName: "Haruka WebGL",

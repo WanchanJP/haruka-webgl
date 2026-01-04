@@ -4,41 +4,56 @@
  */
 
 declare global {
+  /**
+   * Unity WebGL ビルド設定
+   */
+  interface UnityConfig {
+    dataUrl: string;
+    frameworkUrl: string;
+    codeUrl: string;
+    streamingAssetsUrl?: string;
+    companyName?: string;
+    productName?: string;
+    productVersion?: string;
+  }
+
+  /**
+   * Unity WebGL インスタンス
+   */
+  interface UnityInstance {
+    SendMessage(objectName: string, methodName: string, value?: string | number): void;
+    Quit(): Promise<void>;
+    SetFullscreen?(fullscreen: boolean): void;
+  }
+
+  /**
+   * Unity Module（createUnityInstance の戻り値に含まれる場合がある）
+   */
+  interface UnityModule {
+    canvas: HTMLCanvasElement;
+  }
+
+  /**
+   * Unity WebGL ローダー関数
+   * *.loader.js によってグローバルスコープに追加される
+   */
+  function createUnityInstance(
+    canvas: HTMLCanvasElement,
+    config: UnityConfig,
+    onProgress?: (progress: number) => void
+  ): Promise<UnityInstance>;
   interface Window {
     /**
      * Unity WebGLインスタンス
      * loadUnity()によって初期化される
-     *
-     * @remarks
-     * 現在は any 型だが、将来的には適切な型定義に置き換える予定
-     * Unity側のAPIに応じて以下のようなインターフェースを定義することを推奨:
-     *
-     * @example
-     * interface UnityInstance {
-     *   SendMessage(gameObjectName: string, methodName: string, value?: string | number): void;
-     *   Quit(): Promise<void>;
-     *   SetFullscreen(fullscreen: boolean): void;
-     * }
      */
-    unityInstance?: any;
+    unityInstance?: UnityInstance;
 
     /**
      * Unity WebGLローダーが提供する関数
      * *.loader.js によって動的に追加される
      */
-    createUnityInstance?: (
-      canvas: HTMLCanvasElement,
-      config: {
-        dataUrl: string;
-        frameworkUrl: string;
-        codeUrl: string;
-        streamingAssetsUrl: string;
-        companyName: string;
-        productName: string;
-        productVersion: string;
-      },
-      onProgress?: (progress: number) => void
-    ) => Promise<any>;
+    createUnityInstance?: typeof createUnityInstance;
 
     /**
      * Unity → JavaScript への画像データ受信ハンドラ
